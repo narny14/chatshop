@@ -1,6 +1,6 @@
-// server.js - Serveur Node.js avec notifications FCM (version corrigée)
+// server.js - Serveur Node.js avec notifications FCM (version stable)
 const dotenv = require('dotenv');
-dotenv.config(); // Charge les variables d'environnement depuis .env (si présent)
+dotenv.config();
 
 const express = require('express');
 const cors = require('cors');
@@ -15,37 +15,34 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================
-// 1. INITIALISATION FIREBASE ADMIN (via variables d'environnement)
+// 1. INITIALISATION FIREBASE ADMIN (avec variables d'environnement)
 // ============================================================
+let firebaseReady = false;
+
 try {
-  // Récupère les variables d'environnement Firebase
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-  if (!projectId || !clientEmail || !privateKey) {
-    console.error('❌ Erreur : variables Firebase non définies.');
-    console.log('   Assurez-vous que FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL et FIREBASE_PRIVATE_KEY sont définies.');
-    process.exit(1);
+  if (projectId && clientEmail && privateKey) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId,
+        clientEmail,
+        privateKey: privateKey.replace(/\\n/g, '\n')
+      })
+    });
+    firebaseReady = true;
+    console.log('✅ Firebase Admin initialisé avec succès');
+  } else {
+    console.warn('⚠️ Firebase non configuré : variables d\'environnement manquantes');
   }
-
-  // Initialise Firebase Admin avec les variables d'environnement
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: projectId,
-      clientEmail: clientEmail,
-      privateKey: privateKey.replace(/\\n/g, '\n'), // Gère les retours à la ligne
-    }),
-  });
-
-  console.log('✅ Firebase Admin initialisé avec succès');
 } catch (error) {
   console.error('❌ Erreur Firebase Admin :', error);
-  process.exit(1);
 }
 
 // ============================================================
-// 2. CONNEXION MYSQL (via variables d'environnement)
+// 2. CONNEXION MYSQL
 // ============================================================
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -61,8 +58,12 @@ const pool = mysql.createPool({
 // 3. FONCTION : Envoyer une notification FCM
 // ============================================================
 async function sendFCMNotification(userId, title, body, data = {}) {
+  if (!firebaseReady) {
+    console.log('⚠️ Firebase non initialisé, notification ignorée');
+    return false;
+  }
+
   try {
-    // Récupérer le token FCM de l'utilisateur
     const [rows] = await pool.query(
       'SELECT fcm_token FROM user_fcm_tokens WHERE id = ?',
       [userId]
@@ -87,11 +88,11 @@ async function sendFCMNotification(userId, title, body, data = {}) {
           channelId: 'client_notifications'
         }
       },
-      token: token
+      token
     };
 
     const response = await admin.messaging().send(message);
-    console.log(`✅ Notification envoyée à ${userId} :`, response);
+    console.log(`✅ Notification envoyée à ${userId}`);
     return true;
   } catch (error) {
     console.error('❌ Erreur FCM:', error);
@@ -100,10 +101,10 @@ async function sendFCMNotification(userId, title, body, data = {}) {
 }
 
 // ============================================================
-// 4. ROUTES API
+// 4. ROUTES API (inchangées)
 // ============================================================
 
-// ---------- 4.1 Inscription / Vérification ----------
+// ---------- 4.1 Inscription ----------
 app.post('/api/register', async (req, res) => {
   const { email, phone, fcm_token, id_boutique } = req.body;
   if (!email || !phone || !id_boutique) {
@@ -111,26 +112,22 @@ app.post('/api/register', async (req, res) => {
   }
 
   try {
-    // Vérifier si déjà inscrit (phone + id_boutique)
     const [existing] = await pool.query(
       'SELECT id, email, phone, is_admin, id_boutique FROM user_fcm_tokens WHERE phone = ? AND id_boutique = ?',
       [phone, id_boutique]
     );
     if (existing.length > 0) {
       const user = existing[0];
-      // Mettre à jour l'email si différent
       if (user.email !== email) {
         await pool.query('UPDATE user_fcm_tokens SET email = ? WHERE id = ?', [email, user.id]);
         user.email = email;
       }
-      // Mettre à jour le token FCM
       if (fcm_token) {
         await pool.query('UPDATE user_fcm_tokens SET fcm_token = ? WHERE id = ?', [fcm_token, user.id]);
       }
       return res.json({ success: true, user });
     }
 
-    // Premier utilisateur de la boutique = admin
     const [countResult] = await pool.query(
       'SELECT COUNT(*) as cnt FROM user_fcm_tokens WHERE id_boutique = ?',
       [id_boutique]
@@ -144,14 +141,16 @@ app.post('/api/register', async (req, res) => {
       [user_id, email, phone, fcm_token, is_admin, id_boutique]
     );
 
-    const newUser = {
-      id: insertResult.insertId,
-      email,
-      phone,
-      is_admin,
-      id_boutique
-    };
-    res.json({ success: true, user: newUser });
+    res.json({
+      success: true,
+      user: {
+        id: insertResult.insertId,
+        email,
+        phone,
+        is_admin,
+        id_boutique
+      }
+    });
   } catch (error) {
     console.error('Register error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -217,7 +216,7 @@ app.post('/api/get_users', async (req, res) => {
   }
 });
 
-// ---------- 4.4 Envoyer un message (avec notification push) ----------
+// ---------- 4.4 Envoyer un message ----------
 app.post('/api/send', async (req, res) => {
   const { sender_id, receiver_id, message } = req.body;
   if (!sender_id || !receiver_id || !message) {
@@ -225,7 +224,6 @@ app.post('/api/send', async (req, res) => {
   }
 
   try {
-    // Vérifier que les deux utilisateurs sont dans la même boutique
     const [boutiques] = await pool.query(
       'SELECT id_boutique FROM user_fcm_tokens WHERE id = ? OR id = ?',
       [sender_id, receiver_id]
@@ -234,14 +232,12 @@ app.post('/api/send', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Users not in same boutique' });
     }
 
-    // Insérer le message
     const [insertResult] = await pool.query(
       'INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())',
       [sender_id, receiver_id, message]
     );
     const messageId = insertResult.insertId;
 
-    // Récupérer le nom de l'expéditeur pour la notification
     const [senderRows] = await pool.query(
       'SELECT email, phone FROM user_fcm_tokens WHERE id = ?',
       [sender_id]
@@ -249,7 +245,6 @@ app.post('/api/send', async (req, res) => {
     const senderEmail = senderRows[0]?.email || 'Utilisateur';
     const senderName = senderEmail.split('@')[0] || 'Utilisateur';
 
-    // Envoyer une notification push au destinataire
     await sendFCMNotification(
       receiver_id,
       `📩 Nouveau message de ${senderName}`,
@@ -258,7 +253,7 @@ app.post('/api/send', async (req, res) => {
         sender_id: String(sender_id),
         receiver_id: String(receiver_id),
         message_id: String(messageId),
-        message: message
+        message
       }
     );
 
@@ -331,7 +326,6 @@ app.post('/api/sync_admin', async (req, res) => {
   }
 
   try {
-    // Vérifier que l'utilisateur est admin
     const [userRows] = await pool.query(
       'SELECT is_admin, id_boutique FROM user_fcm_tokens WHERE id = ?',
       [current_user]
@@ -341,7 +335,6 @@ app.post('/api/sync_admin', async (req, res) => {
     }
 
     const boutiqueId = userRows[0].id_boutique;
-    // Mettre à jour is_admin selon useradminshop
     await pool.query(
       `UPDATE user_fcm_tokens u
        SET u.is_admin = CASE
@@ -367,7 +360,6 @@ app.post('/api/test_performance', async (req, res) => {
   const start = Date.now();
 
   try {
-    // Vérifier que les deux utilisateurs sont dans la même boutique
     const [boutiques] = await pool.query(
       'SELECT id_boutique FROM user_fcm_tokens WHERE id = ? OR id = ?',
       [sender_id, receiver_id]
@@ -376,15 +368,11 @@ app.post('/api/test_performance', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Users not in same boutique' });
     }
 
-    // Insérer le message
     const [insertResult] = await pool.query(
       'INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())',
       [sender_id, receiver_id, message]
     );
     const messageId = insertResult.insertId;
-
-    // Simuler l'envoi d'une notification (on ne l'envoie pas pour le test)
-    // On mesure juste le temps de l'insertion
 
     const elapsed = Date.now() - start;
 
@@ -398,7 +386,8 @@ app.post('/api/test_performance', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-// Ajouter avant app.listen
+
+// Route de santé
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
