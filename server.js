@@ -3,6 +3,11 @@ const dotenv = require('dotenv');
 dotenv.config();
 // Activer les logs détaillés pour MySQL
 process.env.DEBUG = 'mysql2*';
+console.log('🔍 Variables d\'environnement :');
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? '**défini**' : 'non défini');
 
 const express = require('express');
 const cors = require('cors');
