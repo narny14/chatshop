@@ -1,9 +1,11 @@
-// server.js - Serveur Node.js avec notifications FCM
+// server.js - Serveur Node.js avec notifications FCM (version corrigée)
+const dotenv = require('dotenv');
+dotenv.config(); // Charge les variables d'environnement depuis .env (si présent)
+
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json'); // ← fichier clé privée Firebase
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,20 +15,43 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================
-// 1. INITIALISATION FIREBASE ADMIN
+// 1. INITIALISATION FIREBASE ADMIN (via variables d'environnement)
 // ============================================================
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+try {
+  // Récupère les variables d'environnement Firebase
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (!projectId || !clientEmail || !privateKey) {
+    console.error('❌ Erreur : variables Firebase non définies.');
+    console.log('   Assurez-vous que FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL et FIREBASE_PRIVATE_KEY sont définies.');
+    process.exit(1);
+  }
+
+  // Initialise Firebase Admin avec les variables d'environnement
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: projectId,
+      clientEmail: clientEmail,
+      privateKey: privateKey.replace(/\\n/g, '\n'), // Gère les retours à la ligne
+    }),
+  });
+
+  console.log('✅ Firebase Admin initialisé avec succès');
+} catch (error) {
+  console.error('❌ Erreur Firebase Admin :', error);
+  process.exit(1);
+}
 
 // ============================================================
-// 2. CONNEXION MYSQL (pool de connexions)
+// 2. CONNEXION MYSQL (via variables d'environnement)
 // ============================================================
 const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'u543831662_Byteatomeneons',
-  password: '=KkY@gKhA2',
-  database: 'u543831662_Byteatomeneons',
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'u543831662_Byteatomeneons',
+  password: process.env.DB_PASSWORD || '=KkY@gKhA2',
+  database: process.env.DB_NAME || 'u543831662_Byteatomeneons',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
