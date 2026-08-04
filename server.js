@@ -1,6 +1,8 @@
 // server.js - Serveur Node.js avec notifications FCM (version stable)
 const dotenv = require('dotenv');
 dotenv.config();
+// Activer les logs détaillés pour MySQL
+process.env.DEBUG = 'mysql2*';
 
 const express = require('express');
 const cors = require('cors');
