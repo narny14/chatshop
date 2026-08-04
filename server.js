@@ -1,15 +1,7 @@
-// server.js - Serveur Node.js avec notifications FCM (version stable)
+// server.js - Serveur Node.js avec notifications FCM
 const dotenv = require('dotenv');
 dotenv.config();
-// Activer les logs détaillés pour MySQL
 process.env.DEBUG = 'mysql2*';
-console.log('🔍 Variables d\'environnement :');
-console.log('DB_USER:', process.env.DB_USER);
-console.log('DB_HOST:', process.env.DB_HOST);
-console.log('DB_NAME:', process.env.DB_NAME);
-console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? '**défini**' : 'non défini');
-console.log('DB_USER:', process.env.DB_USER);
-console.log('DB_NAME:', process.env.DB_NAME);
 
 const express = require('express');
 const cors = require('cors');
@@ -19,12 +11,11 @@ const admin = require('firebase-admin');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
 // ============================================================
-// 1. INITIALISATION FIREBASE ADMIN (avec variables d'environnement)
+// 1. INITIALISATION FIREBASE ADMIN
 // ============================================================
 let firebaseReady = false;
 
@@ -44,7 +35,7 @@ try {
     firebaseReady = true;
     console.log('✅ Firebase Admin initialisé avec succès');
   } else {
-    console.warn('⚠️ Firebase non configuré : variables d\'environnement manquantes');
+    console.warn('⚠️ Firebase non configuré (variables manquantes)');
   }
 } catch (error) {
   console.error('❌ Erreur Firebase Admin :', error);
@@ -53,9 +44,8 @@ try {
 // ============================================================
 // 2. CONNEXION MYSQL
 // ============================================================
-// Remplacer le bloc pool par :
 const pool = mysql.createPool({
-  host: '127.0.0.1',                    // ← force IPv4
+  host: '127.0.0.1',
   user: 'u641923167_Bytesatomeneon',
   password: '=KkY@gKhA2',
   database: 'u641923167_Bytesatomeneon',
@@ -101,7 +91,7 @@ async function sendFCMNotification(userId, title, body, data = {}) {
       token
     };
 
-    const response = await admin.messaging().send(message);
+    await admin.messaging().send(message);
     console.log(`✅ Notification envoyée à ${userId}`);
     return true;
   } catch (error) {
@@ -111,7 +101,7 @@ async function sendFCMNotification(userId, title, body, data = {}) {
 }
 
 // ============================================================
-// 4. ROUTES API (inchangées)
+// 4. ROUTES API
 // ============================================================
 
 // ---------- 4.1 Inscription ----------
@@ -242,9 +232,12 @@ app.post('/api/send', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Users not in same boutique' });
     }
 
+    const boutiqueId = boutiques[0].id_boutique; // les deux sont identiques
+
     const [insertResult] = await pool.query(
-      'INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())',
-      [sender_id, receiver_id, message]
+      `INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at, app_id)
+       VALUES (?, ?, ?, 0, NOW(), ?)`,
+      [sender_id, receiver_id, message, boutiqueId]
     );
     const messageId = insertResult.insertId;
 
@@ -282,15 +275,27 @@ app.post('/api/get_messages', async (req, res) => {
   }
 
   try {
+    // Récupérer le id_boutique de l'un des utilisateurs pour filtrer app_id
+    const [userRows] = await pool.query(
+      'SELECT id_boutique FROM user_fcm_tokens WHERE id = ? LIMIT 1',
+      [user1]
+    );
+    if (userRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    const boutiqueId = userRows[0].id_boutique;
+
     const [rows] = await pool.query(
       `SELECT * FROM messages
        WHERE (sender_id = ? AND receiver_id = ?)
           OR (sender_id = ? AND receiver_id = ?)
+       AND app_id = ?
        ORDER BY id ASC`,
-      [user1, user2, user2, user1]
+      [user1, user2, user2, user1, boutiqueId]
     );
     res.json({ success: true, messages: rows });
   } catch (error) {
+    console.error('Get messages error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -378,9 +383,12 @@ app.post('/api/test_performance', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Users not in same boutique' });
     }
 
+    const boutiqueId = boutiques[0].id_boutique;
+
     const [insertResult] = await pool.query(
-      'INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())',
-      [sender_id, receiver_id, message]
+      `INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at, app_id)
+       VALUES (?, ?, ?, 0, NOW(), ?)`,
+      [sender_id, receiver_id, message, boutiqueId]
     );
     const messageId = insertResult.insertId;
 
@@ -397,17 +405,16 @@ app.post('/api/test_performance', async (req, res) => {
   }
 });
 
-// Route de santé
+// ---------- Routes de diagnostic ----------
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
 app.get('/api/db-test', async (req, res) => {
   try {
-    // Test simple
     const [rows] = await pool.query('SELECT 1 as test');
     res.json({ success: true, message: 'DB connected', result: rows });
   } catch (error) {
-    // Retourne tous les détails de l'erreur
     res.status(500).json({
       success: false,
       error: error.message,
@@ -415,7 +422,6 @@ app.get('/api/db-test', async (req, res) => {
       sqlState: error.sqlState,
       errno: error.errno,
       sqlMessage: error.sqlMessage,
-      // Affiche les identifiants utilisés (sauf le mot de passe)
       config: {
         host: pool.config.connectionConfig.host,
         user: pool.config.connectionConfig.user,
@@ -424,6 +430,7 @@ app.get('/api/db-test', async (req, res) => {
     });
   }
 });
+
 // ============================================================
 // 5. DÉMARRAGE DU SERVEUR
 // ============================================================
