@@ -55,7 +55,7 @@ try {
 // ============================================================
 // Remplacer le bloc pool par :
 const pool = mysql.createPool({
-  host: 'localhost',
+  host: '127.0.0.1',                    // ← force IPv4
   user: 'u641923167_Bytesatomeneon',
   password: '=KkY@gKhA2',
   database: 'u641923167_Bytesatomeneon',
@@ -403,10 +403,25 @@ app.get('/api/health', (req, res) => {
 });
 app.get('/api/db-test', async (req, res) => {
   try {
+    // Test simple
     const [rows] = await pool.query('SELECT 1 as test');
     res.json({ success: true, message: 'DB connected', result: rows });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message, code: error.code });
+    // Retourne tous les détails de l'erreur
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      sqlState: error.sqlState,
+      errno: error.errno,
+      sqlMessage: error.sqlMessage,
+      // Affiche les identifiants utilisés (sauf le mot de passe)
+      config: {
+        host: pool.config.connectionConfig.host,
+        user: pool.config.connectionConfig.user,
+        database: pool.config.connectionConfig.database
+      }
+    });
   }
 });
 // ============================================================
