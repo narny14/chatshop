@@ -357,6 +357,52 @@ app.post('/api/sync_admin', async (req, res) => {
   }
 });
 
+// ---------- 4.9 Test de performance ----------
+app.post('/api/test_performance', async (req, res) => {
+  const { sender_id, receiver_id, message } = req.body;
+  if (!sender_id || !receiver_id || !message) {
+    return res.status(400).json({ success: false, error: 'Missing parameters' });
+  }
+
+  const start = Date.now();
+
+  try {
+    // Vérifier que les deux utilisateurs sont dans la même boutique
+    const [boutiques] = await pool.query(
+      'SELECT id_boutique FROM user_fcm_tokens WHERE id = ? OR id = ?',
+      [sender_id, receiver_id]
+    );
+    if (boutiques.length !== 2 || boutiques[0].id_boutique !== boutiques[1].id_boutique) {
+      return res.status(403).json({ success: false, error: 'Users not in same boutique' });
+    }
+
+    // Insérer le message
+    const [insertResult] = await pool.query(
+      'INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at) VALUES (?, ?, ?, 0, NOW())',
+      [sender_id, receiver_id, message]
+    );
+    const messageId = insertResult.insertId;
+
+    // Simuler l'envoi d'une notification (on ne l'envoie pas pour le test)
+    // On mesure juste le temps de l'insertion
+
+    const elapsed = Date.now() - start;
+
+    res.json({
+      success: true,
+      message_id: messageId,
+      elapsed_ms: elapsed
+    });
+  } catch (error) {
+    console.error('Test performance error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+// Ajouter avant app.listen
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // ============================================================
 // 5. DÉMARRAGE DU SERVEUR
 // ============================================================
