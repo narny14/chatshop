@@ -398,7 +398,14 @@ app.post('/api/test_performance', async (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
-
+app.get('/api/db-test', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT 1 as test');
+    res.json({ success: true, message: 'DB connected', result: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message, code: error.code });
+  }
+});
 // ============================================================
 // 5. DÉMARRAGE DU SERVEUR
 // ============================================================
