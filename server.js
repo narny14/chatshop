@@ -56,9 +56,9 @@ try {
 // Remplacer le bloc pool par :
 const pool = mysql.createPool({
   host: 'localhost',
-  user: 'u543831662_Byteatomeneons',
+  user: 'u641923167_Bytesatomeneon',
   password: '=KkY@gKhA2',
-  database: 'u543831662_Byteatomeneons',
+  database: 'u641923167_Bytesatomeneon',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
