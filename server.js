@@ -8,6 +8,8 @@ console.log('DB_USER:', process.env.DB_USER);
 console.log('DB_HOST:', process.env.DB_HOST);
 console.log('DB_NAME:', process.env.DB_NAME);
 console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? '**défini**' : 'non défini');
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_NAME:', process.env.DB_NAME);
 
 const express = require('express');
 const cors = require('cors');
@@ -51,11 +53,12 @@ try {
 // ============================================================
 // 2. CONNEXION MYSQL
 // ============================================================
+// Remplacer le bloc pool par :
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'u543831662_Byteatomeneons',
-  password: process.env.DB_PASSWORD || '=KkY@gKhA2',
-  database: process.env.DB_NAME || 'u543831662_Byteatomeneons',
+  host: 'localhost',
+  user: 'u543831662_Byteatomeneons',
+  password: '=KkY@gKhA2',
+  database: 'u543831662_Byteatomeneons',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
