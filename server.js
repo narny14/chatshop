@@ -1,4 +1,4 @@
-// server.js - Serveur Node.js avec notifications FCM
+// server.js - Serveur Node.js avec notifications FCM (version optimisée)
 const dotenv = require('dotenv');
 dotenv.config();
 process.env.DEBUG = 'mysql2*';
@@ -10,6 +10,11 @@ const admin = require('firebase-admin');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Imports supplémentaires
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 app.use(cors());
 app.use(express.json());
@@ -55,7 +60,7 @@ const pool = mysql.createPool({
 });
 
 // ============================================================
-// 3. FONCTION : Envoyer une notification FCM
+// 3. FONCTION : Envoyer une notification FCM (asynchrone)
 // ============================================================
 async function sendFCMNotification(userId, title, body, data = {}) {
   if (!firebaseReady) {
@@ -216,7 +221,7 @@ app.post('/api/get_users', async (req, res) => {
   }
 });
 
-// ---------- 4.4 Envoyer un message ----------
+// ---------- 4.4 Envoyer un message (avec notification push asynchrone) ----------
 app.post('/api/send', async (req, res) => {
   const { sender_id, receiver_id, message } = req.body;
   if (!sender_id || !receiver_id || !message) {
@@ -232,7 +237,7 @@ app.post('/api/send', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Users not in same boutique' });
     }
 
-    const boutiqueId = boutiques[0].id_boutique; // les deux sont identiques
+    const boutiqueId = boutiques[0].id_boutique;
 
     const [insertResult] = await pool.query(
       `INSERT INTO messages (sender_id, receiver_id, message, is_read, created_at, app_id)
@@ -248,17 +253,20 @@ app.post('/api/send', async (req, res) => {
     const senderEmail = senderRows[0]?.email || 'Utilisateur';
     const senderName = senderEmail.split('@')[0] || 'Utilisateur';
 
-    await sendFCMNotification(
-      receiver_id,
-      `📩 Nouveau message de ${senderName}`,
-      message.length > 100 ? message.substring(0, 100) + '...' : message,
-      {
-        sender_id: String(sender_id),
-        receiver_id: String(receiver_id),
-        message_id: String(messageId),
-        message
-      }
-    );
+    // 🔥 ENVOI DE LA NOTIFICATION EN ARRIÈRE-PLAN (non bloquant)
+    setImmediate(async () => {
+      await sendFCMNotification(
+        receiver_id,
+        `📩 Nouveau message de ${senderName}`,
+        message.length > 100 ? message.substring(0, 100) + '...' : message,
+        {
+          sender_id: String(sender_id),
+          receiver_id: String(receiver_id),
+          message_id: String(messageId),
+          message
+        }
+      );
+    });
 
     res.json({ success: true, message_id: messageId });
   } catch (error) {
@@ -275,7 +283,6 @@ app.post('/api/get_messages', async (req, res) => {
   }
 
   try {
-    // Récupérer le id_boutique de l'un des utilisateurs pour filtrer app_id
     const [userRows] = await pool.query(
       'SELECT id_boutique FROM user_fcm_tokens WHERE id = ? LIMIT 1',
       [user1]
@@ -430,7 +437,125 @@ app.get('/api/db-test', async (req, res) => {
     });
   }
 });
+// ============================================================
+// CONFIGURATION DE MULTER POUR L'UPLOAD DES IMAGES
+// ============================================================
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `product_${unique}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max per file
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non supporté'), false);
+    }
+  }
+});
+
+// ============================================================
+// ROUTE : AJOUTER UN PRODUIT (avec notification push)
+// ============================================================
+app.post('/api/add_product', upload.array('images[]', 10), async (req, res) => {
+  try {
+    const { id_boutique, type, genre, taille, couleur, prix, devise, description } = req.body;
+
+    if (!id_boutique || !type || !prix) {
+      return res.status(400).json({ success: false, error: 'Champs obligatoires manquants' });
+    }
+
+    // Récupérer les noms des fichiers uploadés
+    const imageFiles = req.files || [];
+    const imageNames = imageFiles.map(f => f.filename);
+    const premiere_image = imageNames.length > 0 ? imageNames[0] : null;
+
+    // Insérer le produit dans la table (à adapter selon votre schéma)
+    const [insertResult] = await pool.query(
+      `INSERT INTO products 
+       (id_boutique, type, genre, taille, couleur, prix, devise, description, premiere_image, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [id_boutique, type, genre, taille, couleur, prix, devise, description, premiere_image]
+    );
+
+    const productId = insertResult.insertId;
+
+    // ============================================================
+    // ENVOI D'UNE NOTIFICATION PUSH À TOUS LES UTILISATEURS DE LA BOUTIQUE
+    // ============================================================
+    if (firebaseReady) {
+      // Récupérer tous les tokens FCM des utilisateurs de cette boutique
+      const [rows] = await pool.query(
+        'SELECT fcm_token FROM user_fcm_tokens WHERE id_boutique = ? AND fcm_token IS NOT NULL',
+        [id_boutique]
+      );
+      const tokens = rows.map(row => row.fcm_token).filter(t => t && t.length > 0);
+
+      if (tokens.length > 0) {
+        const message = {
+          notification: {
+            title: `🆕 Nouveau produit : ${type}`,
+            body: `${prix} ${devise} - ${genre || 'Nouveauté'}`
+          },
+          data: {
+            type: 'new_product',
+            product_id: String(productId),
+            id_boutique: String(id_boutique)
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'client_notifications'
+            }
+          }
+        };
+
+        // Envoyer en multicast
+        const response = await admin.messaging().sendEachForMulticast({
+          tokens: tokens,
+          ...message
+        });
+        console.log(`✅ Notifications envoyées à ${response.successCount} utilisateurs sur ${tokens.length}`);
+        if (response.failureCount > 0) {
+          console.error('❌ Échecs :', response.responses.filter(r => !r.success).map(r => r.error));
+        }
+      } else {
+        console.log('⚠️ Aucun token FCM pour la boutique', id_boutique);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Produit ajouté et notifications envoyées',
+      product: {
+        id: productId,
+        type,
+        prix,
+        image: premiere_image
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'ajout du produit :', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 // ============================================================
 // 5. DÉMARRAGE DU SERVEUR
 // ============================================================
