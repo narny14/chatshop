@@ -1,4 +1,4 @@
-// server.js - Version finale unifiée avec toutes les routes et corrections
+// server.js - Version finale complète avec correction multer et gestion d'erreur
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -499,6 +499,7 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
+// ---------- 5.6 Ajout produit (avec multer) ----------
 app.post('/api/add_product', upload.array('images[]', 10), async (req, res) => {
   try {
     const { id_boutique, type, genre, taille, couleur, prix, devise, description } = req.body;
@@ -571,6 +572,7 @@ app.post('/api/add_product', upload.array('images[]', 10), async (req, res) => {
   }
 });
 
+// ---------- 5.7 Publier produit ----------
 app.post('/api/products/publish', async (req, res) => {
   const { id } = req.body;
   if (!id) {
@@ -598,6 +600,7 @@ app.post('/api/products/publish', async (req, res) => {
   }
 });
 
+// ---------- 5.8 Supprimer produit ----------
 app.post('/api/products/delete', async (req, res) => {
   const { id } = req.body;
   if (!id) {
@@ -611,9 +614,6 @@ app.post('/api/products/delete', async (req, res) => {
     await pool.query('DELETE FROM images WHERE id_produit = ?', [id]);
     await pool.query('DELETE FROM produits WHERE id = ?', [id]);
 
-    // Supprimer les fichiers physiques (optionnel)
-    // imageFiles.forEach(file => { fs.unlinkSync(path.join(uploadDir, file)); });
-
     res.json({
       status: 'success',
       message: 'Produit supprimé',
@@ -625,6 +625,7 @@ app.post('/api/products/delete', async (req, res) => {
   }
 });
 
+// ---------- 5.9 Envoyer notification produit ----------
 app.post('/api/send_notification', async (req, res) => {
   const { product_id, product_name, boutique_id } = req.body;
   if (!product_id || !product_name || !boutique_id) {
@@ -684,7 +685,7 @@ app.post('/api/send_notification', async (req, res) => {
   }
 });
 
-// ---------- 5.6 Détails produit (client) ----------
+// ---------- 5.10 Détails produit (client) ----------
 app.get('/api/products/:id', async (req, res) => {
   const productId = parseInt(req.params.id);
   if (!productId || productId <= 0) {
@@ -732,7 +733,7 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
-// ---------- 5.7 Gestion des notes (ratings) ----------
+// ---------- 5.11 Gestion des notes (ratings) ----------
 app.get('/api/products/:id/ratings', async (req, res) => {
   const productId = parseInt(req.params.id);
   const userId = req.query.user_id ? parseInt(req.query.user_id) : 0;
@@ -795,7 +796,7 @@ app.post('/api/products/:id/ratings', async (req, res) => {
   }
 });
 
-// ---------- 5.8 Édition produit (images) ----------
+// ---------- 5.12 Édition produit (images) ----------
 app.get('/api/products/:id/images', async (req, res) => {
   const productId = parseInt(req.params.id);
   if (!productId || productId <= 0) {
@@ -895,7 +896,7 @@ app.post('/api/products/:id/update', upload.array('new_images[]', 10), async (re
   }
 });
 
-// ---------- 5.9 Gestion des commandes ----------
+// ---------- 5.13 Gestion des commandes ----------
 app.post('/api/orders', async (req, res) => {
   const { id_user, id_client, id_boutique, total, devise, items } = req.body;
 
@@ -1035,7 +1036,7 @@ app.post('/api/orders/delete', async (req, res) => {
   }
 });
 
-// ---------- 5.10 Gestion des favoris ----------
+// ---------- 5.14 Gestion des favoris ----------
 app.get('/api/favorites', async (req, res) => {
   const { action, id_user, id_produit } = req.query;
 
@@ -1128,7 +1129,7 @@ app.post('/api/favorites', async (req, res) => {
   }
 });
 
-// ---------- 5.11 Gestion OTP ----------
+// ---------- 5.15 Gestion OTP ----------
 app.post('/api/send_otp', async (req, res) => {
   const { phone, boutique_id } = req.body;
 
@@ -1189,7 +1190,7 @@ app.post('/api/verify_otp', async (req, res) => {
   }
 });
 
-// ---------- 5.12 Servir les images statiques ----------
+// ---------- 5.16 Servir les images statiques ----------
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
