@@ -1,4 +1,4 @@
-// server.js - Serveur Node.js version finale unifiée
+// server.js - Serveur Node.js version finale unifiée (avec correction Firebase)
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -20,21 +20,63 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================
-// 1. INITIALISATION FIREBASE ADMIN
+// 1. INITIALISATION FIREBASE ADMIN (ROBUSTE)
 // ============================================================
 let firebaseReady = false;
 
-try {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+// Fonction pour nettoyer la clé privée (enlever guillemets, etc.)
+function cleanPrivateKey(key) {
+  if (!key) return null;
+  // Supprimer les guillemets en début/fin
+  let cleaned = key.replace(/^["']|["']$/g, '');
+  // Remplacer les \n par des retours à la ligne réels (si déjà présents)
+  // Mais on les garde tels quels, on les remplacera plus tard.
+  return cleaned;
+}
+
+// Fonction pour obtenir les credentials depuis les variables d'env ou un fichier
+function getFirebaseCredentials() {
+  let projectId = process.env.FIREBASE_PROJECT_ID;
+  let clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (privateKey) {
+    privateKey = cleanPrivateKey(privateKey);
+  }
 
   if (projectId && clientEmail && privateKey) {
+    return { projectId, clientEmail, privateKey };
+  }
+
+  // Fallback : tenter de charger depuis un fichier serviceAccountKey.json
+  try {
+    const keyPath = path.join(__dirname, 'serviceAccountKey.json');
+    if (fs.existsSync(keyPath)) {
+      const fileContent = fs.readFileSync(keyPath, 'utf8');
+      const json = JSON.parse(fileContent);
+      return {
+        projectId: json.project_id || json.projectId,
+        clientEmail: json.client_email || json.clientEmail,
+        privateKey: json.private_key || json.privateKey
+      };
+    }
+  } catch (err) {
+    console.warn('⚠️ Erreur chargement fichier clé:', err.message);
+  }
+
+  return null;
+}
+
+try {
+  const creds = getFirebaseCredentials();
+  if (creds && creds.projectId && creds.clientEmail && creds.privateKey) {
+    // Remplacer les \n par des retours à la ligne
+    const privateKey = creds.privateKey.replace(/\\n/g, '\n');
     admin.initializeApp({
       credential: admin.credential.cert({
-        projectId,
-        clientEmail,
-        privateKey: privateKey.replace(/\\n/g, '\n')
+        projectId: creds.projectId,
+        clientEmail: creds.clientEmail,
+        privateKey: privateKey
       })
     });
     firebaseReady = true;
@@ -43,7 +85,7 @@ try {
     console.warn('⚠️ Firebase non configuré (variables manquantes)');
   }
 } catch (error) {
-  console.error('❌ Erreur Firebase Admin :', error);
+  console.error('❌ Erreur Firebase Admin :', error.message);
 }
 
 // ============================================================
@@ -1150,7 +1192,10 @@ app.get('/api/db-test', async (req, res) => {
 
 // ---------- 5.13 Servir les images statiques ----------
 app.use('/uploads', express.static(uploadDir));
-// Gestionnaire d'erreurs global (doit être après toutes les routes)
+
+// ============================================================
+// GESTIONNAIRE D'ERREURS GLOBAL (doit être après toutes les routes)
+// ============================================================
 app.use((err, req, res, next) => {
   console.error('❌ Erreur capturée:', err.stack);
   res.status(500).json({
@@ -1159,6 +1204,7 @@ app.use((err, req, res, next) => {
     stack: err.stack
   });
 });
+
 // ============================================================
 // 6. DÉMARRAGE DU SERVEUR
 // ============================================================
