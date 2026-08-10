@@ -1,4 +1,4 @@
-// server.js - Serveur Node.js version finale unifiée (avec correction Firebase)
+// server.js - Version finale unifiée avec toutes les routes et corrections
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -6,16 +6,66 @@ const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const admin = require('firebase-admin');
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+
+// ============================================================
+// 0. GESTION ROBUSTE DE MULTER (fallback si non installé)
+// ============================================================
+let multer, upload;
+try {
+  multer = require('multer');
+  console.log('✅ multer chargé');
+} catch (e) {
+  console.warn('⚠️ multer non installé, création d\'un upload factice');
+  multer = null;
+}
+
+// Si multer est disponible, configurer l'upload
+if (multer && typeof multer === 'function' && multer.diskStorage) {
+  const uploadDir = path.join(__dirname, 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname);
+      cb(null, `product_${unique}${ext}`);
+    }
+  });
+
+  upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
+      cb(null, allowed.includes(file.mimetype));
+    }
+  });
+} else {
+  // Fallback si multer n'est pas disponible
+  upload = {
+    array: () => (req, res, next) => next(),
+    single: () => (req, res, next) => next(),
+    fields: () => (req, res, next) => next(),
+    none: () => (req, res, next) => next()
+  };
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
-// MIDDLEWARE
+// MIDDLEWARE DE LOG (pour tracer les requêtes)
 // ============================================================
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -24,120 +74,94 @@ app.use(express.json());
 // ============================================================
 let firebaseReady = false;
 
-// Fonction pour nettoyer la clé privée (enlever guillemets, etc.)
 function cleanPrivateKey(key) {
   if (!key) return null;
-  // Supprimer les guillemets en début/fin
-  let cleaned = key.replace(/^["']|["']$/g, '');
-  // Remplacer les \n par des retours à la ligne réels (si déjà présents)
-  // Mais on les garde tels quels, on les remplacera plus tard.
+  let cleaned = key.replace(/^["']|["']$/g, '').trim();
+  if (cleaned.includes('\\n')) cleaned = cleaned.replace(/\\n/g, '\n');
   return cleaned;
 }
 
-// Fonction pour obtenir les credentials depuis les variables d'env ou un fichier
 function getFirebaseCredentials() {
-  let projectId = process.env.FIREBASE_PROJECT_ID;
-  let clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-  if (privateKey) {
-    privateKey = cleanPrivateKey(privateKey);
-  }
-
-  if (projectId && clientEmail && privateKey) {
-    return { projectId, clientEmail, privateKey };
-  }
-
-  // Fallback : tenter de charger depuis un fichier serviceAccountKey.json
+  if (privateKey) privateKey = cleanPrivateKey(privateKey);
+  if (projectId && clientEmail && privateKey) return { projectId, clientEmail, privateKey };
   try {
     const keyPath = path.join(__dirname, 'serviceAccountKey.json');
     if (fs.existsSync(keyPath)) {
-      const fileContent = fs.readFileSync(keyPath, 'utf8');
-      const json = JSON.parse(fileContent);
+      const json = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+      const pk = json.private_key || json.privateKey;
       return {
         projectId: json.project_id || json.projectId,
         clientEmail: json.client_email || json.clientEmail,
-        privateKey: json.private_key || json.privateKey
+        privateKey: cleanPrivateKey(pk)
       };
     }
-  } catch (err) {
-    console.warn('⚠️ Erreur chargement fichier clé:', err.message);
+  } catch (e) {
+    console.warn('⚠️ Erreur lecture fichier clé:', e.message);
   }
-
   return null;
 }
 
 try {
   const creds = getFirebaseCredentials();
   if (creds && creds.projectId && creds.clientEmail && creds.privateKey) {
-    // Remplacer les \n par des retours à la ligne
-    const privateKey = creds.privateKey.replace(/\\n/g, '\n');
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: creds.projectId,
         clientEmail: creds.clientEmail,
-        privateKey: privateKey
+        privateKey: creds.privateKey
       })
     });
     firebaseReady = true;
-    console.log('✅ Firebase Admin initialisé avec succès');
+    console.log('✅ Firebase Admin initialisé');
   } else {
     console.warn('⚠️ Firebase non configuré (variables manquantes)');
   }
 } catch (error) {
-  console.error('❌ Erreur Firebase Admin :', error.message);
+  console.error('❌ Erreur Firebase:', error.message);
 }
 
 // ============================================================
 // 2. CONNEXION MYSQL
 // ============================================================
 const pool = mysql.createPool({
-  host: '127.0.0.1',
-  user: 'u641923167_Bytesatomeneon',
-  password: '=KkY@gKhA2',
-  database: 'u641923167_Bytesatomeneon',
+  host: process.env.DB_HOST || '127.0.0.1',
+  user: process.env.DB_USER || 'u641923167_Bytesatomeneon',
+  password: process.env.DB_PASSWORD || '=KkY@gKhA2',
+  database: process.env.DB_NAME || 'u641923167_Bytesatomeneon',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
 });
 
+// Test non bloquant
+pool.getConnection()
+  .then(conn => { console.log('✅ MySQL connecté'); conn.release(); })
+  .catch(err => console.error('❌ MySQL erreur:', err.message));
+
 // ============================================================
-// 3. FONCTION : ENVOYER UNE NOTIFICATION FCM
+// 3. FONCTION FCM (avec vérification firebaseReady)
 // ============================================================
 async function sendFCMNotification(userId, title, body, data = {}) {
   if (!firebaseReady) {
     console.log('⚠️ Firebase non initialisé, notification ignorée');
     return false;
   }
-
   try {
-    const [rows] = await pool.query(
-      'SELECT fcm_token FROM user_fcm_tokens WHERE id = ?',
-      [userId]
-    );
-    if (rows.length === 0 || !rows[0].fcm_token) {
+    const [rows] = await pool.query('SELECT fcm_token FROM user_fcm_tokens WHERE id = ?', [userId]);
+    if (!rows.length || !rows[0].fcm_token) {
       console.log(`❌ Aucun token FCM pour l'utilisateur ${userId}`);
       return false;
     }
     const token = rows[0].fcm_token;
-
     const message = {
       notification: { title, body },
-      data: {
-        ...data,
-        type: 'new_message',
-        timestamp: new Date().toISOString()
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          channelId: 'client_notifications'
-        }
-      },
+      data: { ...data, type: 'new_message', timestamp: new Date().toISOString() },
+      android: { priority: 'high', notification: { sound: 'default', channelId: 'client_notifications' } },
       token
     };
-
     await admin.messaging().send(message);
     console.log(`✅ Notification envoyée à ${userId}`);
     return true;
@@ -148,39 +172,28 @@ async function sendFCMNotification(userId, title, body, data = {}) {
 }
 
 // ============================================================
-// 4. CONFIGURATION DE MULTER POUR L'UPLOAD DES IMAGES
+// 4. ROUTES DE TEST (DIAGNOSTIC)
 // ============================================================
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, `product_${unique}${ext}`);
-  }
+app.get('/', (req, res) => {
+  res.json({ message: 'Server is running!' });
 });
 
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Type de fichier non supporté'), false);
-    }
+app.get('/api/health', (req, res) => {
+  console.log('✅ /api/health atteinte');
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/db-test', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT 1 as test');
+    res.json({ success: true, result: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // ============================================================
-// 5. ROUTES API
+// 5. ROUTES API (TOUTES VOS ROUTES EXISTANTES)
 // ============================================================
 
 // ---------- 5.1 Inscription / Vérification utilisateur ----------
@@ -1176,25 +1189,15 @@ app.post('/api/verify_otp', async (req, res) => {
   }
 });
 
-// ---------- 5.12 Routes de diagnostic ----------
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.get('/api/db-test', async (req, res) => {
-  try {
-    const [rows] = await pool.query('SELECT 1 as test');
-    res.json({ success: true, message: 'DB connected', result: rows });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ---------- 5.13 Servir les images statiques ----------
+// ---------- 5.12 Servir les images statiques ----------
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 app.use('/uploads', express.static(uploadDir));
 
 // ============================================================
-// GESTIONNAIRE D'ERREURS GLOBAL (doit être après toutes les routes)
+// GESTIONNAIRE D'ERREURS GLOBAL (après toutes les routes)
 // ============================================================
 app.use((err, req, res, next) => {
   console.error('❌ Erreur capturée:', err.stack);
