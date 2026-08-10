@@ -1150,7 +1150,15 @@ app.get('/api/db-test', async (req, res) => {
 
 // ---------- 5.13 Servir les images statiques ----------
 app.use('/uploads', express.static(uploadDir));
-
+// Gestionnaire d'erreurs global (doit être après toutes les routes)
+app.use((err, req, res, next) => {
+  console.error('❌ Erreur capturée:', err.stack);
+  res.status(500).json({
+    success: false,
+    error: err.message,
+    stack: err.stack
+  });
+});
 // ============================================================
 // 6. DÉMARRAGE DU SERVEUR
 // ============================================================
