@@ -33,6 +33,12 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
+app.get('/test', (req, res) => {
+    res.json({
+        message: 'TEST OK'
+    });
+});
+
 // Gestionnaire d'erreurs global
 app.use((err, req, res, next) => {
   console.error('❌ Erreur:', err.stack);
