@@ -21,9 +21,13 @@ app.get('/', (req, res) => {
 
 // Route de santé
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+    console.log('🔥 API HEALTH APPELÉE');
 
+    res.status(200).send({
+        status: 'ok',
+        timestamp: new Date().toISOString()
+    });
+});
 // Middleware 404 (routes non trouvées)
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
