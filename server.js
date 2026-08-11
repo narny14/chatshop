@@ -21,9 +21,7 @@ app.get('/', (req, res) => {
 
 // Route de santé
 app.get('/api/health', (req, res) => {
-    console.log('🔥 API HEALTH APPELÉE');
-
-    res.status(200).send({
+    res.status(200).json({
         status: 'ok',
         timestamp: new Date().toISOString()
     });
