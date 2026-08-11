@@ -20,10 +20,10 @@ app.get('/', (req, res) => {
 });
 
 // Route de santé
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'ok',
-        timestamp: new Date().toISOString()
+        message: 'Health route works'
     });
 });
 // Middleware 404 (routes non trouvées)
