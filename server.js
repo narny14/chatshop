@@ -127,10 +127,10 @@ try {
 // 2. CONNEXION MYSQL
 // ============================================================
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || '127.0.0.1',
-  user: process.env.DB_USER || 'u641923167_Bytesatomeneon',
-  password: process.env.DB_PASSWORD || '=KkY@gKhA2',
-  database: process.env.DB_NAME || 'u641923167_Bytesatomeneon',
+  host: '127.0.0.1', // FORCÉ
+  user: 'u641923167_Bytesatomeneon',
+  password: '=KkY@gKhA2',
+  database: 'u641923167_Bytesatomeneon',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
