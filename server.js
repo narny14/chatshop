@@ -1208,7 +1208,129 @@ app.use((err, req, res, next) => {
     stack: err.stack
   });
 });
+// ============================================================
+// Sauvegarde du token FCM (version Node.js)
+// ============================================================
+app.post('/backend/save_fcm_token', async (req, res) => {
+  const {
+    user_id,
+    phone,
+    fcm_token,
+    device_type,
+    device_name,
+    id_boutique,
+    is_admin
+  } = req.body;
 
+  // Paramètres obligatoires
+  if (!fcm_token || !phone) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Paramètres manquants : fcm_token et phone requis',
+      received: req.body
+    });
+  }
+
+  try {
+    // Si id_boutique n'est pas fourni, on essaie de le récupérer
+    let boutiqueId = id_boutique;
+    if (!boutiqueId) {
+      const [rows] = await pool.query(
+        'SELECT id_boutique FROM user_fcm_tokens WHERE phone = ? ORDER BY id DESC LIMIT 1',
+        [phone]
+      );
+      if (rows.length > 0) {
+        boutiqueId = rows[0].id_boutique;
+      } else {
+        // On pourrait aussi refuser, mais on peut attribuer une valeur par défaut (ex: 1)
+        // Ici on renvoie une erreur pour forcer le client à fournir id_boutique
+        return res.status(400).json({
+          status: 'error',
+          message: 'id_boutique manquant et aucun enregistrement existant pour ce phone'
+        });
+      }
+    }
+
+    const adminFlag = is_admin ? 1 : 0;
+    const userId = user_id || phone; // fallback
+
+    // UPSERT basé sur (phone, id_boutique) UNIQUE
+    const [result] = await pool.query(
+      `INSERT INTO user_fcm_tokens 
+         (user_id, phone, fcm_token, device_type, device_name, id_boutique, is_admin, last_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE
+         user_id = VALUES(user_id),
+         fcm_token = VALUES(fcm_token),
+         device_type = VALUES(device_type),
+         device_name = VALUES(device_name),
+         is_admin = VALUES(is_admin),
+         last_active = NOW()`,
+      [
+        userId,
+        phone,
+        fcm_token,
+        device_type || 'unknown',
+        device_name || 'unknown',
+        boutiqueId,
+        adminFlag
+      ]
+    );
+
+    const action = result.affectedRows === 1 ? 'insert' : 'update';
+    const message = action === 'insert'
+      ? 'Nouvel enregistrement inséré'
+      : 'Enregistrement mis à jour';
+
+    res.json({
+      status: 'success',
+      message,
+      action
+    });
+  } catch (error) {
+    console.error('❌ Erreur save_fcm_token:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+// ============================================================
+// Vérification admin (endpoint propre Node.js)
+// ============================================================
+app.post('/backend/apicheckadmin', async (req, res) => {
+  const { phone, id_boutique } = req.body;
+
+  if (!phone || !id_boutique) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Paramètres manquants (phone et id_boutique)'
+    });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT is_admin 
+       FROM user_fcm_tokens 
+       WHERE phone = ? AND id_boutique = ? 
+       ORDER BY id DESC LIMIT 1`,
+      [phone, id_boutique]
+    );
+
+    const isAdmin = rows.length > 0 && rows[0].is_admin === 1;
+
+    res.json({
+      status: 'success',
+      data: { is_admin: isAdmin }
+    });
+  } catch (error) {
+    console.error('❌ Erreur check_admin:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
 // ============================================================
 // 6. DÉMARRAGE DU SERVEUR
 // ============================================================
