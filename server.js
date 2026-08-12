@@ -1130,8 +1130,11 @@ app.post('/backend/favorites', async (req, res) => {
 });
 
 // ---------- 5.15 Gestion OTP ----------
+// ---------- 5.15 Gestion OTP ----------
 app.post('/backend/send_otp', async (req, res) => {
   const { phone, boutique_id } = req.body;
+
+  console.log('📩 send_otp reçu:', { phone, boutique_id });
 
   if (!phone || !boutique_id) {
     return res.status(400).json({ success: false, message: 'phone et boutique_id requis' });
@@ -1145,6 +1148,8 @@ app.post('/backend/send_otp', async (req, res) => {
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
 
+    console.log('📩 cleanPhone:', cleanPhone, 'code généré:', code);
+
     await pool.query('DELETE FROM otp_codes WHERE phone = ? AND boutique = ?', [cleanPhone, boutique_id]);
     await pool.query(
       'INSERT INTO otp_codes (phone, code, boutique, created_at) VALUES (?, ?, ?, NOW())',
@@ -1153,13 +1158,15 @@ app.post('/backend/send_otp', async (req, res) => {
 
     res.json({ success: true, message: 'OTP généré', code: code });
   } catch (error) {
-    console.error('Erreur send_otp:', error);
+    console.error('❌ Erreur send_otp:', error);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
 });
 
 app.post('/backend/verify_otp', async (req, res) => {
   const { phone, code, boutique_id } = req.body;
+
+  console.log('🔍 verify_otp reçu:', { phone, code, boutique_id });
 
   if (!phone || !boutique_id) {
     return res.status(400).json({ success: false, message: 'phone, code et boutique_id requis' });
@@ -1169,10 +1176,14 @@ app.post('/backend/verify_otp', async (req, res) => {
     const cleanPhone = phone.replace(/\D/g, '');
     const cleanCode = code.replace(/\D/g, '');
 
+    console.log('🔍 cleanPhone:', cleanPhone, 'cleanCode:', cleanCode);
+
     const [rows] = await pool.query(
       'SELECT * FROM otp_codes WHERE phone = ? AND code = ? AND boutique = ?',
       [cleanPhone, cleanCode, boutique_id]
     );
+
+    console.log('🔍 lignes trouvées:', rows.length, rows);
 
     if (rows.length > 0) {
       await pool.query('DELETE FROM otp_codes WHERE phone = ? AND code = ? AND boutique = ?', [
@@ -1185,7 +1196,7 @@ app.post('/backend/verify_otp', async (req, res) => {
       res.json({ success: false, message: 'Code incorrect', phone: cleanPhone, boutique: boutique_id });
     }
   } catch (error) {
-    console.error('Erreur verify_otp:', error);
+    console.error('❌ Erreur verify_otp:', error);
     res.status(500).json({ success: false, message: 'Erreur serveur' });
   }
 });
