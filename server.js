@@ -141,6 +141,27 @@ pool.getConnection()
   .then(conn => { console.log('✅ MySQL connecté'); conn.release(); })
   .catch(err => console.error('❌ MySQL erreur:', err.message));
 
+
+// Synchronisation périodique toutes les 5 minutes
+setInterval(async () => {
+  try {
+    const [result] = await pool.query(`
+      UPDATE user_fcm_tokens u
+      JOIN useradminshop a ON u.phone = a.phone AND u.id_boutique = a.id_boutique
+      SET u.is_admin = 1
+      WHERE u.is_admin != 1 OR u.is_admin IS NULL
+    `);
+    const [result2] = await pool.query(`
+      UPDATE user_fcm_tokens u
+      LEFT JOIN useradminshop a ON u.phone = a.phone AND u.id_boutique = a.id_boutique
+      SET u.is_admin = 0
+      WHERE a.id IS NULL AND u.is_admin = 1
+    `);
+    console.log(`🔄 Sync admin automatique : ${result.affectedRows} activés, ${result2.affectedRows} désactivés`);
+  } catch (error) {
+    console.error('❌ Erreur sync automatique:', error);
+  }
+}, 5 * 60 * 1000); // 5 minutes  
 // ============================================================
 // 3. FONCTION FCM (avec vérification firebaseReady)
 // ============================================================
@@ -268,7 +289,36 @@ app.post('/backend/check_user', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+// ============================================================
+// Synchronisation des droits admin (useradminshop → user_fcm_tokens)
+// ============================================================
+app.post('/backend/sync_admin', async (req, res) => {
+  try {
+    // Mettre à jour is_admin = 1 pour les utilisateurs présents dans useradminshop
+    const [result] = await pool.query(`
+      UPDATE user_fcm_tokens u
+      JOIN useradminshop a ON u.phone = a.phone AND u.id_boutique = a.id_boutique
+      SET u.is_admin = 1
+      WHERE u.is_admin != 1 OR u.is_admin IS NULL
+    `);
 
+    // Mettre à jour is_admin = 0 pour les utilisateurs qui ne sont plus dans useradminshop
+    const [result2] = await pool.query(`
+      UPDATE user_fcm_tokens u
+      LEFT JOIN useradminshop a ON u.phone = a.phone AND u.id_boutique = a.id_boutique
+      SET u.is_admin = 0
+      WHERE a.id IS NULL AND u.is_admin = 1
+    `);
+
+    res.json({
+      status: 'success',
+      message: `Synchronisation terminée : ${result.affectedRows} mis à jour à 1, ${result2.affectedRows} mis à jour à 0`
+    });
+  } catch (error) {
+    console.error('❌ Erreur sync_admin:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
 // ---------- 5.2 Gestion des utilisateurs ----------
 app.post('/backend/get_users', async (req, res) => {
   const { current_user } = req.body;
