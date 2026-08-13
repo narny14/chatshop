@@ -327,7 +327,7 @@ app.post('/backend/get_users', async (req, res) => {
   }
 
   try {
-    // ✅ Recherche par id OU user_id (gère les deux formats)
+    // ✅ RECHERCHE PAR id OU user_id (gère les deux formats)
     const [userRows] = await pool.query(
       `SELECT id, is_admin, id_boutique FROM user_fcm_tokens 
        WHERE id = ? OR user_id = ? 
@@ -342,7 +342,7 @@ app.post('/backend/get_users', async (req, res) => {
     const user = userRows[0];
     const isAdmin = user.is_admin === 1;
     const boutiqueId = user.id_boutique;
-    const userId = user.id; // ID auto-incrément
+    const userId = user.id;
 
     if (!boutiqueId) {
       return res.status(400).json({ success: false, error: 'User has no boutique assigned' });
