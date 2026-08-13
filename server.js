@@ -277,16 +277,22 @@ app.post('/backend/get_users', async (req, res) => {
   }
 
   try {
+    // Rechercher par id OU user_id
     const [userRows] = await pool.query(
-      'SELECT is_admin, id_boutique FROM user_fcm_tokens WHERE id = ?',
-      [current_user]
+      `SELECT id, is_admin, id_boutique FROM user_fcm_tokens 
+       WHERE id = ? OR user_id = ? 
+       LIMIT 1`,
+      [current_user, current_user]
     );
+
     if (userRows.length === 0) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
+
     const user = userRows[0];
     const isAdmin = user.is_admin === 1;
     const boutiqueId = user.id_boutique;
+    const userId = user.id; // Récupérer l'ID auto-incrément
 
     if (!boutiqueId) {
       return res.json({ success: false, error: 'User has no boutique assigned' });
@@ -295,14 +301,16 @@ app.post('/backend/get_users', async (req, res) => {
     let sql, params;
     if (isAdmin) {
       sql = 'SELECT id, email, phone, is_admin FROM user_fcm_tokens WHERE id_boutique = ? AND id != ? ORDER BY id DESC';
-      params = [boutiqueId, current_user];
+      params = [boutiqueId, userId];
     } else {
       sql = 'SELECT id, email, phone, is_admin FROM user_fcm_tokens WHERE id_boutique = ? AND is_admin = 1 ORDER BY id DESC';
       params = [boutiqueId];
     }
+
     const [users] = await pool.query(sql, params);
     res.json({ success: true, users });
   } catch (error) {
+    console.error('❌ Erreur get_users:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
