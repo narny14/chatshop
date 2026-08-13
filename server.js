@@ -322,30 +322,36 @@ app.post('/backend/sync_admin', async (req, res) => {
 // ---------- 5.2 Gestion des utilisateurs ----------
 app.post('/backend/get_users', async (req, res) => {
   const { current_user } = req.body;
+  console.log(`📥 current_user reçu: ${current_user} (type: ${typeof current_user})`);
+
   if (!current_user) {
     return res.status(400).json({ success: false, error: 'current_user required' });
   }
 
   try {
-    // Rechercher par id OU user_id
+    // Recherche par id OU user_id
     const [userRows] = await pool.query(
       `SELECT id, is_admin, id_boutique FROM user_fcm_tokens 
        WHERE id = ? OR user_id = ? 
        LIMIT 1`,
       [current_user, current_user]
     );
+    console.log(`👤 Utilisateur trouvé:`, userRows);
 
     if (userRows.length === 0) {
+      console.error(`❌ Aucun utilisateur trouvé pour current_user = ${current_user}`);
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
     const user = userRows[0];
     const isAdmin = user.is_admin === 1;
     const boutiqueId = user.id_boutique;
-    const userId = user.id; // Récupérer l'ID auto-incrément
+    const userId = user.id;
+
+    console.log(`🏪 Boutique ID: ${boutiqueId}, isAdmin: ${isAdmin}, userId: ${userId}`);
 
     if (!boutiqueId) {
-      return res.json({ success: false, error: 'User has no boutique assigned' });
+      return res.status(400).json({ success: false, error: 'User has no boutique assigned' });
     }
 
     let sql, params;
@@ -357,7 +363,11 @@ app.post('/backend/get_users', async (req, res) => {
       params = [boutiqueId];
     }
 
+    console.log(`📤 SQL exécutée: ${sql} avec params:`, params);
+
     const [users] = await pool.query(sql, params);
+    console.log(`✅ Utilisateurs retournés:`, users);
+
     res.json({ success: true, users });
   } catch (error) {
     console.error('❌ Erreur get_users:', error);
