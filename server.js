@@ -1309,6 +1309,43 @@ app.post('/backend/save_fcm_token', async (req, res) => {
 // ============================================================
 // Vérification admin (endpoint propre Node.js)
 // ============================================================
+// ============================================================
+// Vérification admin (table useradminshop)
+// ============================================================
+app.post('/backend/apicheckadmin', async (req, res) => {
+  const { phone, id_boutique } = req.body;
+
+  if (!phone || !id_boutique) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Paramètres manquants (phone et id_boutique)'
+    });
+  }
+
+  try {
+    // Requête sur la table useradminshop
+    const [rows] = await pool.query(
+      `SELECT * FROM useradminshop 
+       WHERE phone = ? AND id_boutique = ? 
+       LIMIT 1`,
+      [phone, id_boutique]
+    );
+
+    const isAdmin = rows.length > 0; // true si un enregistrement existe
+
+    res.json({
+      status: 'success',
+      data: { is_admin: isAdmin }
+    });
+  } catch (error) {
+    console.error('❌ Erreur check_admin:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+/*
 app.post('/backend/apicheckadmin', async (req, res) => {
   const { phone, id_boutique } = req.body;
 
@@ -1341,7 +1378,7 @@ app.post('/backend/apicheckadmin', async (req, res) => {
       message: error.message
     });
   }
-});
+});*/
 // ============================================================
 // 6. DÉMARRAGE DU SERVEUR
 // ============================================================
