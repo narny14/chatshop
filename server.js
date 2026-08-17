@@ -322,47 +322,119 @@ app.post('/backend/sync_admin', async (req, res) => {
 // ---------- 5.2 Gestion des utilisateurs ----------
 app.post('/backend/get_users', async (req, res) => {
   console.log('📥 GET_USERS : current_user =', req.body.current_user);
+
   const { current_user } = req.body;
+
   if (!current_user) {
-    return res.status(400).json({ success: false, error: 'current_user required' });
+    return res.status(400).json({
+      success: false,
+      error: 'current_user required'
+    });
   }
 
   try {
-    // ✅ RECHERCHE PAR id OU user_id (gère les deux formats)
+
     const [userRows] = await pool.query(
-      `SELECT id, is_admin, id_boutique FROM user_fcm_tokens 
-       WHERE id = ? OR user_id = ? 
+      `SELECT
+         id,
+         user_id,
+         email,
+         phone,
+         is_admin,
+         id_boutique
+       FROM user_fcm_tokens
+       WHERE id = ? OR user_id = ?
        LIMIT 1`,
       [current_user, current_user]
     );
 
     if (userRows.length === 0) {
-      return res.status(404).json({ success: false, error: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
     }
 
-    const user = userRows[0];
-    const isAdmin = user.is_admin === 1;
-    const boutiqueId = user.id_boutique;
-    const userId = user.id;
+    const currentUser = userRows[0];
+
+    const userId = currentUser.id;
+    const boutiqueId = currentUser.id_boutique;
+    const isAdmin = Number(currentUser.is_admin) === 1;
 
     if (!boutiqueId) {
-      return res.status(400).json({ success: false, error: 'User has no boutique assigned' });
+      return res.status(400).json({
+        success: false,
+        error: 'User has no boutique assigned'
+      });
     }
 
-    let sql, params;
+    let users;
+
     if (isAdmin) {
-      sql = 'SELECT id, email, phone, is_admin FROM user_fcm_tokens WHERE id_boutique = ? AND id != ? ORDER BY id DESC';
-      params = [boutiqueId, userId];
+
+      // ADMIN :
+      // afficher tous les clients de sa boutique
+      const [rows] = await pool.query(
+        `SELECT
+           id,
+           email,
+           phone,
+           is_admin
+         FROM user_fcm_tokens
+         WHERE id_boutique = ?
+           AND id != ?
+         ORDER BY id DESC`,
+        [boutiqueId, userId]
+      );
+
+      users = rows;
+
     } else {
-      sql = 'SELECT id, email, phone, is_admin FROM user_fcm_tokens WHERE id_boutique = ? AND is_admin = 1 ORDER BY id DESC';
-      params = [boutiqueId];
+
+      // CLIENT :
+      // afficher tous les administrateurs de sa boutique
+      const [rows] = await pool.query(
+        `SELECT
+           id,
+           email,
+           phone,
+           is_admin
+         FROM user_fcm_tokens
+         WHERE id_boutique = ?
+           AND is_admin = 1
+         ORDER BY id DESC`,
+        [boutiqueId]
+      );
+
+      users = rows;
     }
 
-    const [users] = await pool.query(sql, params);
-    res.json({ success: true, users });
+    console.log(
+      `👤 User ${userId} | admin=${isAdmin} | boutique=${boutiqueId} | interlocuteurs=${users.length}`
+    );
+
+    res.json({
+      success: true,
+
+      current_user: {
+        id: userId,
+        email: currentUser.email,
+        phone: currentUser.phone,
+        is_admin: isAdmin ? 1 : 0,
+        id_boutique: boutiqueId
+      },
+
+      users: users || []
+    });
+
   } catch (error) {
+
     console.error('❌ Erreur get_users:', error);
-    res.status(500).json({ success: false, error: error.message });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
@@ -437,10 +509,13 @@ app.post('/backend/get_messages', async (req, res) => {
 
     const [rows] = await pool.query(
       `SELECT * FROM messages
-       WHERE (sender_id = ? AND receiver_id = ?)
-          OR (sender_id = ? AND receiver_id = ?)
-       AND app_id = ?
-       ORDER BY id ASC`,
+       WHERE (
+    (sender_id = ? AND receiver_id = ?)
+    OR
+    (sender_id = ? AND receiver_id = ?)
+)
+AND app_id = ?
+ORDER BY id ASC`,
       [user1, user2, user2, user1, boutiqueId]
     );
     res.json({ success: true, messages: rows });
@@ -469,31 +544,114 @@ app.post('/backend/read', async (req, res) => {
 
 // ---------- 5.4 Gestion des tokens FCM ----------
 app.post('/backend/save_token', async (req, res) => {
-  const { user_id, phone, fcm_token, device_type, device_name, id_boutique, is_admin } = req.body;
+  const {
+    user_id,
+    phone,
+    fcm_token,
+    device_type,
+    device_name,
+    id_boutique
+  } = req.body;
 
   if (!fcm_token || !phone || !id_boutique) {
-    return res.status(400).json({ status: 'error', message: 'fcm_token, phone et id_boutique requis' });
+    return res.status(400).json({
+      status: 'error',
+      message: 'fcm_token, phone et id_boutique requis'
+    });
   }
 
   try {
-    const adminFlag = is_admin ? 1 : 0;
-    const [result] = await pool.query(
-      `INSERT INTO user_fcm_tokens (user_id, phone, fcm_token, device_type, device_name, id_boutique, is_admin, last_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         user_id = VALUES(user_id),
-         fcm_token = VALUES(fcm_token),
-         device_type = VALUES(device_type),
-         device_name = VALUES(device_name),
-         is_admin = VALUES(is_admin),
-         last_active = NOW()`,
-      [user_id, phone, fcm_token, device_type, device_name, id_boutique, adminFlag]
+    // Vérifier si l'utilisateur existe déjà
+    const [existing] = await pool.query(
+      `SELECT id, is_admin
+       FROM user_fcm_tokens
+       WHERE phone = ? AND id_boutique = ?
+       LIMIT 1`,
+      [phone, id_boutique]
     );
-    const action = result.affectedRows === 1 ? 'insert' : 'update';
-    res.json({ status: 'success', message: `Token ${action}é`, action });
+
+    if (existing.length > 0) {
+
+      // IMPORTANT :
+      // On met uniquement à jour le token FCM.
+      // On NE TOUCHE PAS à is_admin.
+      await pool.query(
+        `UPDATE user_fcm_tokens
+         SET
+           user_id = ?,
+           fcm_token = ?,
+           device_type = ?,
+           device_name = ?,
+           last_active = NOW()
+         WHERE phone = ? AND id_boutique = ?`,
+        [
+          user_id,
+          fcm_token,
+          device_type,
+          device_name,
+          phone,
+          id_boutique
+        ]
+      );
+
+      return res.json({
+        status: 'success',
+        message: 'Token FCM mis à jour',
+        action: 'update',
+        is_admin: Number(existing[0].is_admin) === 1 ? 1 : 0
+      });
+    }
+
+    // Nouvel utilisateur :
+    // vérifier son rôle directement dans useradminshop
+    const [admins] = await pool.query(
+      `SELECT id
+       FROM useradminshop
+       WHERE phone = ? AND id_boutique = ?
+       LIMIT 1`,
+      [phone, id_boutique]
+    );
+
+    const adminFlag = admins.length > 0 ? 1 : 0;
+
+    await pool.query(
+      `INSERT INTO user_fcm_tokens
+       (
+         user_id,
+         phone,
+         fcm_token,
+         device_type,
+         device_name,
+         id_boutique,
+         is_admin,
+         last_active
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        user_id,
+        phone,
+        fcm_token,
+        device_type,
+        device_name,
+        id_boutique,
+        adminFlag
+      ]
+    );
+
+    return res.json({
+      status: 'success',
+      message: 'Token FCM enregistré',
+      action: 'insert',
+      is_admin: adminFlag
+    });
+
   } catch (error) {
-    console.error('Erreur save_token:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    console.error('❌ Erreur save_token:', error);
+
+    return res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
   }
 });
 
