@@ -321,6 +321,7 @@ app.post('/backend/sync_admin', async (req, res) => {
 });
 // ---------- 5.2 Gestion des utilisateurs ----------
 app.post('/backend/get_users', async (req, res) => {
+  console.log('📥 GET_USERS : current_user =', req.body.current_user);
   const { current_user } = req.body;
   if (!current_user) {
     return res.status(400).json({ success: false, error: 'current_user required' });
