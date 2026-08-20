@@ -717,77 +717,303 @@ app.get('/backend/products', async (req, res) => {
 });
 
 // ---------- 5.6 Ajout produit (avec multer) ----------
-app.post('/backend/add_product', upload.array('images[]', 10), async (req, res) => {
-  try {
-    const { id_boutique, type, genre, taille, couleur, prix, devise, description } = req.body;
+app.post(
+  '/backend/add_product',
+  upload.array('images[]', 10),
+  async (req, res) => {
 
-    if (!id_boutique || !type || !prix) {
-      return res.status(400).json({ success: false, error: 'Champs obligatoires manquants' });
-    }
-
-    const imageFiles = req.files || [];
-    const imageNames = imageFiles.map(f => f.filename);
-    const premiere_image = imageNames.length > 0 ? imageNames[0] : null;
-
-    const [insertResult] = await pool.query(
-      `INSERT INTO products 
-       (id_boutique, type, genre, taille, couleur, prix, devise, description, premiere_image, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [id_boutique, type, genre, taille, couleur, prix, devise, description, premiere_image]
-    );
-
-    const productId = insertResult.insertId;
-
-    if (firebaseReady) {
-      const [rows] = await pool.query(
-        'SELECT fcm_token FROM user_fcm_tokens WHERE id_boutique = ? AND fcm_token IS NOT NULL',
-        [id_boutique]
-      );
-      const tokens = rows.map(row => row.fcm_token).filter(t => t && t.length > 0);
-
-      if (tokens.length > 0) {
-        const message = {
-          notification: {
-            title: `🆕 Nouveau produit : ${type}`,
-            body: `${prix} ${devise} - ${genre || 'Nouveauté'}`
-          },
-          data: {
-            type: 'new_product',
-            product_id: String(productId),
-            id_boutique: String(id_boutique)
-          },
-          android: {
-            priority: 'high',
-            notification: {
-              sound: 'default',
-              channelId: 'client_notifications'
-            }
-          }
-        };
-
-        const sendResult = await admin.messaging().sendEachForMulticast({
-          tokens: tokens,
-          ...message
-        });
-        console.log(`✅ Notifications envoyées à ${sendResult.successCount} utilisateurs sur ${tokens.length}`);
-      }
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Produit ajouté et notifications envoyées',
-      product: {
-        id: productId,
+    try {
+      const {
+        id_boutique,
         type,
+        genre,
+        taille,
+        couleur,
         prix,
-        image: premiere_image
+        devise,
+        description
+      } = req.body;
+
+      // Vérification des champs obligatoires
+      if (!id_boutique || !type || !prix) {
+        return res.status(400).json({
+          success: false,
+          error: 'Champs obligatoires manquants'
+        });
       }
-    });
-  } catch (error) {
-    console.error('❌ Erreur ajout produit:', error);
-    res.status(500).json({ success: false, error: error.message });
+
+      const parsedPrix = parseFloat(prix);
+
+      if (isNaN(parsedPrix) || parsedPrix <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Prix invalide'
+        });
+      }
+
+      const imageFiles = req.files || [];
+
+      console.log(
+        `📦 Ajout produit : boutique=${id_boutique}, type=${type}, images=${imageFiles.length}`
+      );
+
+      // Première image
+      const premiere_image =
+        imageFiles.length > 0
+          ? imageFiles[0].filename
+          : null;
+
+      // ==========================================
+      // TRANSACTION MYSQL
+      // ==========================================
+
+      const connection = await pool.getConnection();
+
+      try {
+
+        await connection.beginTransaction();
+
+        // ==========================================
+        // 1. INSERTION DU PRODUIT
+        // ==========================================
+
+        const [insertResult] = await connection.query(
+          `INSERT INTO produits
+           (
+             id_boutique,
+             type,
+             genre,
+             taille,
+             couleur,
+             prix,
+             devise,
+             description,
+             premiere_image,
+             created_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            id_boutique,
+            type,
+            genre || '',
+            taille || '',
+            couleur || '',
+            parsedPrix,
+            devise || 'USD',
+            description || '',
+            premiere_image
+          ]
+        );
+
+        const productId = insertResult.insertId;
+
+        console.log(`✅ Produit créé : ID ${productId}`);
+
+        // ==========================================
+        // 2. INSERTION DES IMAGES
+        // ==========================================
+
+        for (const file of imageFiles) {
+
+          await connection.query(
+            `INSERT INTO images
+             (
+               id_produit,
+               image,
+               created_at
+             )
+             VALUES (?, ?, NOW())`,
+            [
+              productId,
+              file.filename
+            ]
+          );
+
+          console.log(
+            `🖼️ Image enregistrée : ${file.filename}`
+          );
+        }
+
+        // ==========================================
+        // 3. VALIDATION TRANSACTION
+        // ==========================================
+
+        await connection.commit();
+
+        connection.release();
+
+        console.log(
+          `✅ Produit ${productId} enregistré avec ${imageFiles.length} image(s)`
+        );
+
+        // ==========================================
+        // 4. NOTIFICATION FCM
+        // ==========================================
+
+        if (firebaseReady) {
+
+          try {
+
+            const [rows] = await pool.query(
+              `SELECT fcm_token
+               FROM user_fcm_tokens
+               WHERE id_boutique = ?
+               AND fcm_token IS NOT NULL
+               AND fcm_token != ''`,
+              [id_boutique]
+            );
+
+            const tokens = rows
+              .map(row => row.fcm_token)
+              .filter(token => token && token.length > 0);
+
+            if (tokens.length > 0) {
+
+              const message = {
+
+                notification: {
+                  title: `🆕 Nouveau produit : ${type}`,
+                  body: `${parsedPrix} ${devise || 'USD'} - ${genre || 'Nouveauté'}`
+                },
+
+                data: {
+                  type: 'new_product',
+                  product_id: String(productId),
+                  id_boutique: String(id_boutique)
+                },
+
+                android: {
+                  priority: 'high',
+
+                  notification: {
+                    sound: 'default',
+                    channelId: 'client_notifications'
+                  }
+                }
+              };
+
+              const sendResult =
+                await admin.messaging().sendEachForMulticast({
+                  tokens,
+                  ...message
+                });
+
+              console.log(
+                `🔔 FCM : ${sendResult.successCount} envoyé(s), ${sendResult.failureCount} échec(s)`
+              );
+
+            } else {
+
+              console.log(
+                `ℹ️ Aucun token FCM pour la boutique ${id_boutique}`
+              );
+            }
+
+          } catch (fcmError) {
+
+            // IMPORTANT :
+            // Une erreur FCM ne doit PAS annuler la création du produit.
+
+            console.error(
+              '⚠️ Erreur notification FCM :',
+              fcmError.message
+            );
+          }
+        }
+
+        // ==========================================
+        // 5. RÉPONSE
+        // ==========================================
+
+        res.status(201).json({
+
+          success: true,
+
+          message: 'Produit ajouté avec succès',
+
+          product: {
+
+            id: productId,
+
+            id_boutique,
+
+            type,
+
+            genre: genre || '',
+
+            taille: taille || '',
+
+            couleur: couleur || '',
+
+            prix: parsedPrix,
+
+            devise: devise || 'USD',
+
+            description: description || '',
+
+            premiere_image,
+
+            images: imageFiles.map(file => ({
+              filename: file.filename,
+              url: `/uploads/${file.filename}`
+            })),
+
+            images_count: imageFiles.length
+          }
+
+        });
+
+      } catch (dbError) {
+
+        // Annulation transaction
+        await connection.rollback();
+
+        connection.release();
+
+        // ==========================================
+        // SUPPRESSION DES FICHIERS UPLOADÉS
+        // SI MYSQL ÉCHOUE
+        // ==========================================
+
+        for (const file of imageFiles) {
+
+          try {
+
+            const filePath = path.join(
+              uploadDir,
+              file.filename
+            );
+
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+
+          } catch (deleteError) {
+
+            console.error(
+              `⚠️ Impossible de supprimer ${file.filename}:`,
+              deleteError.message
+            );
+          }
+        }
+
+        throw dbError;
+      }
+
+    } catch (error) {
+
+      console.error(
+        '❌ Erreur ajout produit:',
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
   }
-});
+);
 
 // ---------- 5.7 Publier produit ----------
 app.post('/backend/products/publish', async (req, res) => {
