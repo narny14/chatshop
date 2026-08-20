@@ -8,7 +8,11 @@ const mysql = require('mysql2/promise');
 const admin = require('firebase-admin');
 const path = require('path');
 const fs = require('fs');
+const uploadDir = path.join(__dirname, 'uploads');
 
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 // ============================================================
 // 0. GESTION ROBUSTE DE MULTER (fallback si non installé)
 // ============================================================
@@ -717,12 +721,14 @@ app.get('/backend/products', async (req, res) => {
 });
 
 // ---------- 5.6 Ajout produit (avec multer) ----------
+// ---------- 5.6 Ajout produit (avec multer) ----------
 app.post(
   '/backend/add_product',
   upload.array('images[]', 10),
   async (req, res) => {
 
     try {
+
       const {
         id_boutique,
         type,
@@ -734,7 +740,10 @@ app.post(
         description
       } = req.body;
 
-      // Vérification des champs obligatoires
+      // ==========================================
+      // 1. VÉRIFICATION DES CHAMPS
+      // ==========================================
+
       if (!id_boutique || !type || !prix) {
         return res.status(400).json({
           success: false,
@@ -751,20 +760,18 @@ app.post(
         });
       }
 
+      // ==========================================
+      // 2. RÉCUPÉRATION DES IMAGES
+      // ==========================================
+
       const imageFiles = req.files || [];
 
       console.log(
         `📦 Ajout produit : boutique=${id_boutique}, type=${type}, images=${imageFiles.length}`
       );
 
-      // Première image
-      const premiere_image =
-        imageFiles.length > 0
-          ? imageFiles[0].filename
-          : null;
-
       // ==========================================
-      // TRANSACTION MYSQL
+      // 3. CONNEXION MYSQL
       // ==========================================
 
       const connection = await pool.getConnection();
@@ -774,7 +781,7 @@ app.post(
         await connection.beginTransaction();
 
         // ==========================================
-        // 1. INSERTION DU PRODUIT
+        // 4. INSERTION DU PRODUIT
         // ==========================================
 
         const [insertResult] = await connection.query(
@@ -788,10 +795,9 @@ app.post(
              prix,
              devise,
              description,
-             premiere_image,
              created_at
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
           [
             id_boutique,
             type,
@@ -800,8 +806,7 @@ app.post(
             couleur || '',
             parsedPrix,
             devise || 'USD',
-            description || '',
-            premiere_image
+            description || ''
           ]
         );
 
@@ -810,7 +815,7 @@ app.post(
         console.log(`✅ Produit créé : ID ${productId}`);
 
         // ==========================================
-        // 2. INSERTION DES IMAGES
+        // 5. INSERTION DES IMAGES
         // ==========================================
 
         for (const file of imageFiles) {
@@ -835,7 +840,7 @@ app.post(
         }
 
         // ==========================================
-        // 3. VALIDATION TRANSACTION
+        // 6. VALIDATION TRANSACTION
         // ==========================================
 
         await connection.commit();
@@ -847,7 +852,7 @@ app.post(
         );
 
         // ==========================================
-        // 4. NOTIFICATION FCM
+        // 7. NOTIFICATION FCM
         // ==========================================
 
         if (firebaseReady) {
@@ -911,9 +916,6 @@ app.post(
 
           } catch (fcmError) {
 
-            // IMPORTANT :
-            // Une erreur FCM ne doit PAS annuler la création du produit.
-
             console.error(
               '⚠️ Erreur notification FCM :',
               fcmError.message
@@ -922,7 +924,7 @@ app.post(
         }
 
         // ==========================================
-        // 5. RÉPONSE
+        // 8. RÉPONSE AU MOBILE
         // ==========================================
 
         res.status(201).json({
@@ -951,8 +953,6 @@ app.post(
 
             description: description || '',
 
-            premiere_image,
-
             images: imageFiles.map(file => ({
               filename: file.filename,
               url: `/uploads/${file.filename}`
@@ -965,14 +965,12 @@ app.post(
 
       } catch (dbError) {
 
-        // Annulation transaction
         await connection.rollback();
 
         connection.release();
 
         // ==========================================
-        // SUPPRESSION DES FICHIERS UPLOADÉS
-        // SI MYSQL ÉCHOUE
+        // SUPPRESSION DES IMAGES SI MYSQL ÉCHOUE
         // ==========================================
 
         for (const file of imageFiles) {
@@ -1645,7 +1643,7 @@ app.post('/backend/verify_otp', async (req, res) => {
 });
 
 // ---------- 5.16 Servir les images statiques ----------
-const uploadDir = path.join(__dirname, 'uploads');
+
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
