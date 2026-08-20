@@ -727,7 +727,16 @@ app.post(
   upload.array('images[]', 10),
   async (req, res) => {
 
+    let connection = null;
+    let transactionStarted = false;
+
+    const imageFiles = req.files || [];
+
     try {
+
+      // =====================================================
+      // 1. RÉCUPÉRATION DES DONNÉES
+      // =====================================================
 
       const {
         id_boutique,
@@ -740,275 +749,632 @@ app.post(
         description
       } = req.body;
 
-      console.log('==============================');
-console.log('📦 DONNÉES PRODUIT REÇUES');
-console.log('id_boutique reçu =', id_boutique);
-console.log('type =', type);
-console.log('prix =', prix);
-console.log('==============================');
-
-      // ==========================================
-      // 1. VÉRIFICATION DES CHAMPS
-      // ==========================================
-
-      // Vérification des champs obligatoires
-if (!id_boutique || !type || !prix) {
-  return res.status(400).json({
-    success: false,
-    error: 'Champs obligatoires manquants'
-  });
-}
-
-// Conversion de l'ID boutique en nombre
-const boutiqueId = parseInt(id_boutique, 10);
-
-if (isNaN(boutiqueId) || boutiqueId <= 0) {
-  return res.status(400).json({
-    success: false,
-    error: 'ID boutique invalide'
-  });
-}
-
-// Vérifier que la boutique existe réellement
-const [boutiqueRows] = await pool.query(
-  'SELECT id FROM boutiques WHERE id = ? LIMIT 1',
-  [boutiqueId]
-);
-
-if (boutiqueRows.length === 0) {
-  return res.status(400).json({
-    success: false,
-    error: `La boutique ${boutiqueId} n'existe pas dans la table boutiques`
-  });
-}
-
-console.log(`✅ Boutique vérifiée : id=${boutiqueId}`);
-
-const parsedPrix = parseFloat(prix);
-
-if (isNaN(parsedPrix) || parsedPrix <= 0) {
-  return res.status(400).json({
-    success: false,
-    error: 'Prix invalide'
-  });
-}
+      console.log('======================================');
+      console.log('📦 AJOUT PRODUIT');
+      console.log('======================================');
+      console.log('id_boutique =', id_boutique);
+      console.log('type        =', type);
+      console.log('genre       =', genre);
+      console.log('taille      =', taille);
+      console.log('couleur     =', couleur);
+      console.log('prix        =', prix);
+      console.log('devise      =', devise);
+      console.log('description =', description);
+      console.log('images      =', imageFiles.length);
+      console.log('======================================');
 
 
-      // ==========================================
-      // 2. RÉCUPÉRATION DES IMAGES
-      // ==========================================
+      // =====================================================
+      // 2. VÉRIFICATION DES CHAMPS OBLIGATOIRES
+      // =====================================================
 
-      const imageFiles = req.files || [];
+      if (!id_boutique) {
+        return res.status(400).json({
+          success: false,
+          error: 'ID boutique manquant'
+        });
+      }
 
-      console.log(
-        `📦 Ajout produit : boutique=${id_boutique}, type=${type}, images=${imageFiles.length}`
+      if (!type || String(type).trim() === '') {
+        return res.status(400).json({
+          success: false,
+          error: 'Le type du produit est obligatoire'
+        });
+      }
+
+      if (
+        prix === undefined ||
+        prix === null ||
+        String(prix).trim() === ''
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Le prix est obligatoire'
+        });
+      }
+
+
+      // =====================================================
+      // 3. CONVERSION ID BOUTIQUE
+      // =====================================================
+
+      const boutiqueId = Number.parseInt(
+        String(id_boutique).trim(),
+        10
       );
 
-      // ==========================================
-      // 3. CONNEXION MYSQL
-      // ==========================================
+      if (
+        !Number.isInteger(boutiqueId) ||
+        boutiqueId <= 0
+      ) {
 
-      const connection = await pool.getConnection();
+        return res.status(400).json({
+          success: false,
+          error: 'ID boutique invalide'
+        });
+      }
+
+
+      // =====================================================
+      // 4. CONVERSION DU PRIX
+      // =====================================================
+
+      const parsedPrix = Number.parseFloat(
+        String(prix).replace(',', '.').trim()
+      );
+
+      if (
+        !Number.isFinite(parsedPrix) ||
+        parsedPrix <= 0
+      ) {
+
+        return res.status(400).json({
+          success: false,
+          error: 'Prix invalide'
+        });
+      }
+
+
+      // =====================================================
+      // 5. NORMALISATION DES TEXTES
+      // =====================================================
+
+      const productType = String(type).trim();
+
+      const productGenre =
+        genre !== undefined &&
+        genre !== null
+          ? String(genre).trim()
+          : '';
+
+      const productTaille =
+        taille !== undefined &&
+        taille !== null
+          ? String(taille).trim()
+          : '';
+
+      const productCouleur =
+        couleur !== undefined &&
+        couleur !== null
+          ? String(couleur).trim()
+          : '';
+
+      const productDevise =
+        devise !== undefined &&
+        devise !== null &&
+        String(devise).trim() !== ''
+          ? String(devise).trim()
+          : 'USD';
+
+      const productDescription =
+        description !== undefined &&
+        description !== null
+          ? String(description).trim()
+          : '';
+
+
+      // =====================================================
+      // 6. VÉRIFIER QUE LA BOUTIQUE EXISTE
+      // =====================================================
+
+      const [boutiqueRows] = await pool.query(
+        `
+        SELECT \`id\`
+        FROM \`boutiques\`
+        WHERE \`id\` = ?
+        LIMIT 1
+        `,
+        [boutiqueId]
+      );
+
+      if (!boutiqueRows || boutiqueRows.length === 0) {
+
+        return res.status(400).json({
+          success: false,
+          error: `La boutique ${boutiqueId} n'existe pas`
+        });
+      }
+
+      console.log(
+        `✅ Boutique vérifiée : ${boutiqueId}`
+      );
+
+
+      // =====================================================
+      // 7. CONNEXION MYSQL
+      // =====================================================
+
+      connection = await pool.getConnection();
+
+      console.log('✅ Connexion MySQL obtenue');
+
+
+      // =====================================================
+      // 8. DÉBUT TRANSACTION
+      // =====================================================
+
+      await connection.beginTransaction();
+
+      transactionStarted = true;
+
+      console.log('🔄 Transaction démarrée');
+
+
+      // =====================================================
+      // 9. INSERTION DU PRODUIT
+      // =====================================================
+      //
+      // IMPORTANT :
+      // On utilise CURRENT_TIMESTAMP directement dans SQL.
+      // Les noms des colonnes sont protégés par ``
+      //
+      // =====================================================
+
+      const productSql = `
+        INSERT INTO \`produits\`
+        (
+          \`id_boutique\`,
+          \`type\`,
+          \`genre\`,
+          \`taille\`,
+          \`couleur\`,
+          \`prix\`,
+          \`devise\`,
+          \`description\`,
+          \`created_at\`
+        )
+        VALUES
+        (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          CURRENT_TIMESTAMP
+        )
+      `;
+
+      const productParams = [
+        boutiqueId,
+        productType,
+        productGenre,
+        productTaille,
+        productCouleur,
+        parsedPrix,
+        productDevise,
+        productDescription
+      ];
+
+
+      // =====================================================
+      // 10. LOG SQL POUR DIAGNOSTIC
+      // =====================================================
+
+      console.log('======================================');
+      console.log('📝 INSERT PRODUIT');
+      console.log('======================================');
 
       try {
 
-        await connection.beginTransaction();
+        console.log(
+          connection.format(
+            productSql,
+            productParams
+          )
+        );
 
-        // ==========================================
-        // 4. INSERTION DU PRODUIT
-        // ==========================================
+      } catch (formatError) {
 
-        const [insertResult] = await connection.query(
-  `INSERT INTO produits
-   (
-     id_boutique,
-     type,
-     genre,
-     taille,
-     couleur,
-     prix,
-     devise,
-     description,
-     premiere_image,
-     created_at
-   )
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-  [
-    boutiqueId,
-    type,
-    genre || '',
-    taille || '',
-    couleur || '',
-    parsedPrix,
-    devise || 'USD',
-    description || ''
-  ]
-);
+        console.log(
+          '⚠️ Impossible de formatter le SQL :',
+          formatError.message
+        );
+      }
 
-        const productId = insertResult.insertId;
+      console.log('======================================');
 
-        console.log(`✅ Produit créé : ID ${productId}`);
 
-        // ==========================================
-        // 5. INSERTION DES IMAGES
-        // ==========================================
+      // =====================================================
+      // 11. EXÉCUTION INSERT PRODUIT
+      // =====================================================
+
+      const [insertResult] = await connection.query(
+        productSql,
+        productParams
+      );
+
+
+      if (
+        !insertResult ||
+        !insertResult.insertId
+      ) {
+
+        throw new Error(
+          'MySQL n’a pas retourné l’ID du produit'
+        );
+      }
+
+
+      const productId = insertResult.insertId;
+
+      console.log(
+        `✅ Produit créé : ID ${productId}`
+      );
+
+
+      // =====================================================
+      // 12. INSERTION DES IMAGES
+      // =====================================================
+
+      if (imageFiles.length > 0) {
+
+        console.log(
+          `🖼️ ${imageFiles.length} image(s) à enregistrer`
+        );
+
+        const imageSql = `
+          INSERT INTO \`images\`
+          (
+            \`id_produit\`,
+            \`image\`,
+            \`created_at\`
+          )
+          VALUES
+          (
+            ?,
+            ?,
+            CURRENT_TIMESTAMP
+          )
+        `;
+
 
         for (const file of imageFiles) {
 
+          if (!file || !file.filename) {
+            console.log(
+              '⚠️ Fichier image invalide ignoré'
+            );
+            continue;
+          }
+
+
+          console.log(
+            `🖼️ Enregistrement image : ${file.filename}`
+          );
+
+
           await connection.query(
-            `INSERT INTO images
-             (
-               id_produit,
-               image,
-               created_at
-             )
-             VALUES (?, ?, NOW())`,
+            imageSql,
             [
               productId,
               file.filename
             ]
           );
 
-          console.log(
-            `🖼️ Image enregistrée : ${file.filename}`
-          );
         }
 
-        // ==========================================
-        // 6. VALIDATION TRANSACTION
-        // ==========================================
-
-        await connection.commit();
-
-        connection.release();
-
         console.log(
-          `✅ Produit ${productId} enregistré avec ${imageFiles.length} image(s)`
+          '✅ Toutes les images ont été enregistrées'
         );
 
-        // ==========================================
-        // 7. NOTIFICATION FCM
-        // ==========================================
+      } else {
 
-        if (firebaseReady) {
+        console.log(
+          'ℹ️ Aucun fichier image envoyé'
+        );
+      }
 
-          try {
 
-            const [rows] = await pool.query(
-              `SELECT fcm_token
-               FROM user_fcm_tokens
-               WHERE id_boutique = ?
-               AND fcm_token IS NOT NULL
-               AND fcm_token != ''`,
-              [boutiqueId]
+      // =====================================================
+      // 13. VALIDATION TRANSACTION
+      // =====================================================
+
+      await connection.commit();
+
+      transactionStarted = false;
+
+      console.log(
+        `✅ Transaction validée pour produit ${productId}`
+      );
+
+
+      // =====================================================
+      // 14. LIBÉRATION CONNEXION
+      // =====================================================
+
+      connection.release();
+      connection = null;
+
+
+      // =====================================================
+      // 15. NOTIFICATION FCM
+      // =====================================================
+
+      if (
+        typeof firebaseReady !== 'undefined' &&
+        firebaseReady
+      ) {
+
+        try {
+
+          console.log(
+            `🔔 Recherche des tokens FCM boutique ${boutiqueId}`
+          );
+
+
+          const [tokenRows] = await pool.query(
+            `
+            SELECT \`fcm_token\`
+            FROM \`user_fcm_tokens\`
+            WHERE \`id_boutique\` = ?
+            AND \`fcm_token\` IS NOT NULL
+            AND \`fcm_token\` != ''
+            `,
+            [boutiqueId]
+          );
+
+
+          const tokens = tokenRows
+            .map(row => row.fcm_token)
+            .filter(
+              token =>
+                typeof token === 'string' &&
+                token.trim() !== ''
             );
 
-            const tokens = rows
-              .map(row => row.fcm_token)
-              .filter(token => token && token.length > 0);
 
-            if (tokens.length > 0) {
+          console.log(
+            `🔔 Tokens FCM trouvés : ${tokens.length}`
+          );
 
-              const message = {
+
+          if (tokens.length > 0) {
+
+            const message = {
+
+              notification: {
+                title: `🆕 Nouveau produit : ${productType}`,
+                body:
+                  `${parsedPrix} ${productDevise} - ` +
+                  `${productGenre || 'Nouveauté'}`
+              },
+
+              data: {
+                type: 'new_product',
+                product_id: String(productId),
+                id_boutique: String(boutiqueId)
+              },
+
+              android: {
+                priority: 'high',
 
                 notification: {
-                  title: `🆕 Nouveau produit : ${type}`,
-                  body: `${parsedPrix} ${devise || 'USD'} - ${genre || 'Nouveauté'}`
-                },
-
-                data: {
-                  type: 'new_product',
-                  product_id: String(productId),
-                  id_boutique: String(boutiqueId)
-                },
-
-                android: {
-                  priority: 'high',
-
-                  notification: {
-                    sound: 'default',
-                    channelId: 'client_notifications'
-                  }
+                  sound: 'default',
+                  channelId: 'client_notifications'
                 }
-              };
+              }
 
-              const sendResult =
-                await admin.messaging().sendEachForMulticast({
+            };
+
+
+            const sendResult =
+              await admin
+                .messaging()
+                .sendEachForMulticast({
                   tokens,
                   ...message
                 });
 
-              console.log(
-                `🔔 FCM : ${sendResult.successCount} envoyé(s), ${sendResult.failureCount} échec(s)`
-              );
 
-            } else {
+            console.log(
+              `🔔 FCM : ` +
+              `${sendResult.successCount} envoyé(s), ` +
+              `${sendResult.failureCount} échec(s)`
+            );
 
-              console.log(
-                `ℹ️ Aucun token FCM pour la boutique ${id_boutique}`
-              );
-            }
+          } else {
 
-          } catch (fcmError) {
-
-            console.error(
-              '⚠️ Erreur notification FCM :',
-              fcmError.message
+            console.log(
+              `ℹ️ Aucun token FCM pour boutique ${boutiqueId}`
             );
           }
+
+
+        } catch (fcmError) {
+
+          // IMPORTANT :
+          // Une erreur FCM ne doit PAS annuler
+          // le produit déjà enregistré.
+
+          console.error(
+            '⚠️ Erreur FCM :',
+            fcmError.message
+          );
         }
 
-        // ==========================================
-        // 8. RÉPONSE AU MOBILE
-        // ==========================================
+      }
 
-        res.status(201).json({
 
-          success: true,
+      // =====================================================
+      // 16. RÉPONSE AU MOBILE
+      // =====================================================
 
-          message: 'Produit ajouté avec succès',
+      return res.status(201).json({
 
-          product: {
+        success: true,
 
-            id: productId,
+        message: 'Produit ajouté avec succès',
 
-            id_boutique,
+        product: {
 
-            type,
+          id: productId,
 
-            genre: genre || '',
+          id_boutique: boutiqueId,
 
-            taille: taille || '',
+          type: productType,
 
-            couleur: couleur || '',
+          genre: productGenre,
 
-            prix: parsedPrix,
+          taille: productTaille,
 
-            devise: devise || 'USD',
+          couleur: productCouleur,
 
-            description: description || '',
+          prix: parsedPrix,
 
-            images: imageFiles.map(file => ({
+          devise: productDevise,
+
+          description: productDescription,
+
+          images: imageFiles
+            .filter(file => file && file.filename)
+            .map(file => ({
               filename: file.filename,
               url: `/uploads/${file.filename}`
             })),
 
-            images_count: imageFiles.length
-          }
+          images_count:
+            imageFiles.filter(
+              file => file && file.filename
+            ).length
 
-        });
+        }
 
-      } catch (dbError) {
+      });
 
-        await connection.rollback();
 
-        connection.release();
+    } catch (error) {
 
-        // ==========================================
-        // SUPPRESSION DES IMAGES SI MYSQL ÉCHOUE
-        // ==========================================
+      // =====================================================
+      // 17. ERREUR
+      // =====================================================
+
+      console.error(
+        '======================================'
+      );
+
+      console.error(
+        '❌ ERREUR AJOUT PRODUIT'
+      );
+
+      console.error(
+        '======================================'
+      );
+
+      console.error(
+        'Message :',
+        error.message
+      );
+
+      console.error(
+        'Code :',
+        error.code
+      );
+
+      console.error(
+        'SQL State :',
+        error.sqlState
+      );
+
+      console.error(
+        'SQL Message :',
+        error.sqlMessage
+      );
+
+      console.error(
+        'Stack :',
+        error.stack
+      );
+
+      console.error(
+        '======================================'
+      );
+
+
+      // =====================================================
+      // 18. ROLLBACK
+      // =====================================================
+
+      if (
+        connection &&
+        transactionStarted
+      ) {
+
+        try {
+
+          await connection.rollback();
+
+          console.log(
+            '↩️ Transaction annulée'
+          );
+
+        } catch (rollbackError) {
+
+          console.error(
+            '⚠️ Erreur rollback :',
+            rollbackError.message
+          );
+        }
+
+      }
+
+
+      // =====================================================
+      // 19. LIBÉRATION CONNEXION
+      // =====================================================
+
+      if (connection) {
+
+        try {
+          connection.release();
+        } catch (releaseError) {
+          console.error(
+            '⚠️ Erreur release :',
+            releaseError.message
+          );
+        }
+
+        connection = null;
+      }
+
+
+      // =====================================================
+      // 20. SUPPRESSION DES IMAGES
+      // =====================================================
+
+      if (imageFiles.length > 0) {
 
         for (const file of imageFiles) {
+
+          if (
+            !file ||
+            !file.filename
+          ) {
+            continue;
+          }
+
 
           try {
 
@@ -1017,34 +1383,48 @@ if (isNaN(parsedPrix) || parsedPrix <= 0) {
               file.filename
             );
 
+
             if (fs.existsSync(filePath)) {
+
               fs.unlinkSync(filePath);
+
+              console.log(
+                `🗑️ Image supprimée : ${file.filename}`
+              );
             }
+
 
           } catch (deleteError) {
 
             console.error(
-              `⚠️ Impossible de supprimer ${file.filename}:`,
+              `⚠️ Impossible de supprimer ` +
+              `${file.filename}:`,
               deleteError.message
             );
           }
+
         }
 
-        throw dbError;
       }
 
-    } catch (error) {
 
-      console.error(
-        '❌ Erreur ajout produit:',
-        error
-      );
+      // =====================================================
+      // 21. RÉPONSE ERREUR
+      // =====================================================
 
-      res.status(500).json({
+      return res.status(500).json({
+
         success: false,
-        error: error.message
+
+        error:
+          error.sqlMessage ||
+          error.message ||
+          'Erreur lors de l’ajout du produit'
+
       });
+
     }
+
   }
 );
 
