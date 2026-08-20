@@ -740,25 +740,59 @@ app.post(
         description
       } = req.body;
 
+      console.log('==============================');
+console.log('📦 DONNÉES PRODUIT REÇUES');
+console.log('id_boutique reçu =', id_boutique);
+console.log('type =', type);
+console.log('prix =', prix);
+console.log('==============================');
+
       // ==========================================
       // 1. VÉRIFICATION DES CHAMPS
       // ==========================================
 
-      if (!id_boutique || !type || !prix) {
-        return res.status(400).json({
-          success: false,
-          error: 'Champs obligatoires manquants'
-        });
-      }
+      // Vérification des champs obligatoires
+if (!id_boutique || !type || !prix) {
+  return res.status(400).json({
+    success: false,
+    error: 'Champs obligatoires manquants'
+  });
+}
 
-      const parsedPrix = parseFloat(prix);
+// Conversion de l'ID boutique en nombre
+const boutiqueId = parseInt(id_boutique, 10);
 
-      if (isNaN(parsedPrix) || parsedPrix <= 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Prix invalide'
-        });
-      }
+if (isNaN(boutiqueId) || boutiqueId <= 0) {
+  return res.status(400).json({
+    success: false,
+    error: 'ID boutique invalide'
+  });
+}
+
+// Vérifier que la boutique existe réellement
+const [boutiqueRows] = await pool.query(
+  'SELECT id FROM boutiques WHERE id = ? LIMIT 1',
+  [boutiqueId]
+);
+
+if (boutiqueRows.length === 0) {
+  return res.status(400).json({
+    success: false,
+    error: `La boutique ${boutiqueId} n'existe pas dans la table boutiques`
+  });
+}
+
+console.log(`✅ Boutique vérifiée : id=${boutiqueId}`);
+
+const parsedPrix = parseFloat(prix);
+
+if (isNaN(parsedPrix) || parsedPrix <= 0) {
+  return res.status(400).json({
+    success: false,
+    error: 'Prix invalide'
+  });
+}
+
 
       // ==========================================
       // 2. RÉCUPÉRATION DES IMAGES
@@ -785,30 +819,31 @@ app.post(
         // ==========================================
 
         const [insertResult] = await connection.query(
-          `INSERT INTO produits
-           (
-             id_boutique,
-             type,
-             genre,
-             taille,
-             couleur,
-             prix,
-             devise,
-             description,
-             created_at
-           )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [
-            id_boutique,
-            type,
-            genre || '',
-            taille || '',
-            couleur || '',
-            parsedPrix,
-            devise || 'USD',
-            description || ''
-          ]
-        );
+  `INSERT INTO produits
+   (
+     id_boutique,
+     type,
+     genre,
+     taille,
+     couleur,
+     prix,
+     devise,
+     description,
+     premiere_image,
+     created_at
+   )
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+  [
+    boutiqueId,
+    type,
+    genre || '',
+    taille || '',
+    couleur || '',
+    parsedPrix,
+    devise || 'USD',
+    description || ''
+  ]
+);
 
         const productId = insertResult.insertId;
 
@@ -865,7 +900,7 @@ app.post(
                WHERE id_boutique = ?
                AND fcm_token IS NOT NULL
                AND fcm_token != ''`,
-              [id_boutique]
+              [boutiqueId]
             );
 
             const tokens = rows
@@ -884,7 +919,7 @@ app.post(
                 data: {
                   type: 'new_product',
                   product_id: String(productId),
-                  id_boutique: String(id_boutique)
+                  id_boutique: String(boutiqueId)
                 },
 
                 android: {
