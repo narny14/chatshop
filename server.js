@@ -1894,10 +1894,10 @@ app.post('/backend/orders/delete', async (req, res) => {
 
 // ---------- 5.14 Gestion des favoris ----------
 // ============================================================
-// 5.14 GESTION DES FAVORIS
+// FAVORIS
 // ============================================================
 
-// ---------- GET /backend/favorites ----------
+// GET /backend/favorites
 app.get('/backend/favorites', async (req, res) => {
   const { action, id_user, id_produit } = req.query;
 
@@ -1915,8 +1915,7 @@ app.get('/backend/favorites', async (req, res) => {
     // ========================================================
     if (action === 'list') {
 
-      const [rows] = await pool.query(
-        `
+      const [rows] = await pool.query(`
         SELECT
           f.id AS favorite_id,
           f.id_user,
@@ -1931,14 +1930,13 @@ app.get('/backend/favorites', async (req, res) => {
           p.prix,
           p.devise,
           p.description,
-          p.premiere_image,
 
           (
             SELECT JSON_ARRAYAGG(
               JSON_OBJECT(
                 'id', i.id,
                 'image', i.image,
-                'url', CONCAT('uploads/', i.image),
+                'url', CONCAT('/uploads/', i.image),
                 'filename', i.image,
                 'created_at', i.created_at
               )
@@ -1955,19 +1953,12 @@ app.get('/backend/favorites', async (req, res) => {
         WHERE f.id_user = ?
 
         ORDER BY f.date_ajout DESC
-        `,
-        [id_user]
-      );
+      `, [id_user]);
 
-      // ======================================================
-      // NORMALISATION DES FAVORIS
-      // ======================================================
       const favorites = rows.map(row => {
 
         let images = [];
 
-        // MySQL peut retourner JSON_ARRAYAGG comme
-        // chaîne JSON ou directement comme objet selon le driver.
         if (row.images) {
           try {
             images =
@@ -1976,7 +1967,7 @@ app.get('/backend/favorites', async (req, res) => {
                 : row.images;
           } catch (e) {
             console.warn(
-              '⚠️ Impossible de parser les images du produit:',
+              '⚠️ Erreur parsing images produit',
               row.product_id,
               e.message
             );
@@ -1985,18 +1976,15 @@ app.get('/backend/favorites', async (req, res) => {
           }
         }
 
-        // Sécurité : toujours retourner un tableau
         if (!Array.isArray(images)) {
           images = [];
         }
 
         return {
           id: row.product_id,
-
           id_produit: row.id_produit,
 
           favorite_id: row.favorite_id,
-
           id_user: row.id_user,
 
           type: row.type,
@@ -2006,10 +1994,7 @@ app.get('/backend/favorites', async (req, res) => {
 
           prix: row.prix,
           devise: row.devise,
-
           description: row.description,
-
-          premiere_image: row.premiere_image,
 
           images: images,
 
@@ -2030,20 +2015,24 @@ app.get('/backend/favorites', async (req, res) => {
 
 
     // ========================================================
-    // VERIFIER SI UN PRODUIT EST FAVORI
+    // VERIFIER SI PRODUIT FAVORI
     // ========================================================
-    else if (action === 'check' && id_produit) {
+    if (action === 'check') {
 
-      const [rows] = await pool.query(
-        `
+      if (!id_produit) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'id_produit requis'
+        });
+      }
+
+      const [rows] = await pool.query(`
         SELECT id
         FROM favoris
         WHERE id_user = ?
           AND id_produit = ?
         LIMIT 1
-        `,
-        [id_user, id_produit]
-      );
+      `, [id_user, id_produit]);
 
       return res.json({
         status: 'success',
@@ -2055,14 +2044,10 @@ app.get('/backend/favorites', async (req, res) => {
     // ========================================================
     // ACTION INCONNUE
     // ========================================================
-    else {
-
-      return res.status(400).json({
-        status: 'error',
-        message: 'Action non reconnue'
-      });
-
-    }
+    return res.status(400).json({
+      status: 'error',
+      message: 'Action non reconnue'
+    });
 
   } catch (error) {
 
@@ -2081,7 +2066,6 @@ app.get('/backend/favorites', async (req, res) => {
 
 // ============================================================
 // POST /backend/favorites
-// Ajouter / supprimer un favori
 // ============================================================
 
 app.post('/backend/favorites', async (req, res) => {
@@ -2092,17 +2076,11 @@ app.post('/backend/favorites', async (req, res) => {
     id_produit
   } = req.body;
 
-  // ----------------------------------------------------------
-  // Vérification paramètres
-  // ----------------------------------------------------------
-
   if (!action || !id_user || !id_produit) {
-
     return res.status(400).json({
       status: 'error',
       message: 'action, id_user et id_produit requis'
     });
-
   }
 
   try {
@@ -2111,23 +2089,18 @@ app.post('/backend/favorites', async (req, res) => {
     // VERIFIER UTILISATEUR
     // ========================================================
 
-    const [userRows] = await pool.query(
-      `
+    const [userRows] = await pool.query(`
       SELECT id
       FROM user_fcm_tokens
       WHERE id = ?
       LIMIT 1
-      `,
-      [id_user]
-    );
+    `, [id_user]);
 
     if (userRows.length === 0) {
-
       return res.status(404).json({
         status: 'error',
         message: 'Utilisateur non trouvé'
       });
-
     }
 
 
@@ -2135,77 +2108,51 @@ app.post('/backend/favorites', async (req, res) => {
     // VERIFIER PRODUIT
     // ========================================================
 
-    const [productRows] = await pool.query(
-      `
+    const [productRows] = await pool.query(`
       SELECT id
       FROM produits
       WHERE id = ?
       LIMIT 1
-      `,
-      [id_produit]
-    );
+    `, [id_produit]);
 
     if (productRows.length === 0) {
-
       return res.status(404).json({
         status: 'error',
         message: 'Produit non trouvé'
       });
-
     }
 
 
     // ========================================================
-    // AJOUTER AUX FAVORIS
+    // AJOUT
     // ========================================================
 
     if (action === 'add') {
 
-      const [existing] = await pool.query(
-        `
+      const [existing] = await pool.query(`
         SELECT id
         FROM favoris
         WHERE id_user = ?
           AND id_produit = ?
         LIMIT 1
-        `,
-        [
-          id_user,
-          id_produit
-        ]
-      );
+      `, [id_user, id_produit]);
 
       if (existing.length > 0) {
-
         return res.json({
           status: 'error',
           message: 'Déjà dans les favoris'
         });
-
       }
 
-
-      await pool.query(
-        `
+      await pool.query(`
         INSERT INTO favoris
-          (
-            id_user,
-            id_produit,
-            date_ajout
-          )
-        VALUES
-          (
-            ?,
-            ?,
-            NOW()
-          )
-        `,
-        [
+        (
           id_user,
-          id_produit
-        ]
-      );
-
+          id_produit,
+          date_ajout
+        )
+        VALUES (?, ?, NOW())
+      `, [id_user, id_produit]);
 
       return res.json({
         status: 'success',
@@ -2215,33 +2162,23 @@ app.post('/backend/favorites', async (req, res) => {
 
 
     // ========================================================
-    // SUPPRIMER DES FAVORIS
+    // SUPPRESSION
     // ========================================================
 
-    else if (action === 'remove') {
+    if (action === 'remove') {
 
-      const [result] = await pool.query(
-        `
+      const [result] = await pool.query(`
         DELETE FROM favoris
         WHERE id_user = ?
           AND id_produit = ?
-        `,
-        [
-          id_user,
-          id_produit
-        ]
-      );
-
+      `, [id_user, id_produit]);
 
       if (result.affectedRows > 0) {
-
         return res.json({
           status: 'success',
           message: 'Retiré des favoris'
         });
-
       }
-
 
       return res.status(404).json({
         status: 'error',
@@ -2254,14 +2191,10 @@ app.post('/backend/favorites', async (req, res) => {
     // ACTION INCONNUE
     // ========================================================
 
-    else {
-
-      return res.status(400).json({
-        status: 'error',
-        message: 'Action non reconnue'
-      });
-
-    }
+    return res.status(400).json({
+      status: 'error',
+      message: 'Action non reconnue'
+    });
 
   } catch (error) {
 
@@ -2274,7 +2207,6 @@ app.post('/backend/favorites', async (req, res) => {
       status: 'error',
       message: error.message
     });
-
   }
 });
 
