@@ -107,6 +107,19 @@ app.use(express.json());
 app.use('/uploads', express.static(uploadDir));
 
 console.log('🖼️ Images accessibles via /uploads');
+console.log('=================================');
+console.log('📁 __dirname =', __dirname);
+console.log('📁 uploadDir =', uploadDir);
+console.log(
+  '📷 fichier existe =',
+  fs.existsSync(
+    path.join(
+      uploadDir,
+      'product_1787333236768-381284924.jpg'
+    )
+  )
+);
+console.log('=================================');
 // ============================================================
 // 1. INITIALISATION FIREBASE ADMIN (ROBUSTE)
 // ============================================================
