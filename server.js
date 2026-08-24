@@ -1,4 +1,3 @@
-// server.js - Version finale complète avec correction multer et gestion d'erreur
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -8,49 +7,79 @@ const mysql = require('mysql2/promise');
 const admin = require('firebase-admin');
 const path = require('path');
 const fs = require('fs');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// ============================================================
+// DOSSIER DES IMAGES
+// ============================================================
+
 const uploadDir = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+console.log('📁 Dossier images:', uploadDir);
+
 // ============================================================
-// 0. GESTION ROBUSTE DE MULTER (fallback si non installé)
+// MULTER
 // ============================================================
+
 let multer, upload;
+
 try {
   multer = require('multer');
   console.log('✅ multer chargé');
 } catch (e) {
-  console.warn('⚠️ multer non installé, création d\'un upload factice');
+  console.warn('⚠️ multer non installé');
   multer = null;
 }
 
-// Si multer est disponible, configurer l'upload
 if (multer && typeof multer === 'function' && multer.diskStorage) {
-  const uploadDir = path.join(__dirname, 'uploads');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
 
   const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
+    destination: (req, file, cb) => {
+      cb(null, uploadDir);
+    },
+
     filename: (req, file, cb) => {
-      const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const unique =
+        Date.now() + '-' + Math.round(Math.random() * 1E9);
+
       const ext = path.extname(file.originalname);
+
       cb(null, `product_${unique}${ext}`);
     }
   });
 
   upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
+
+    limits: {
+      fileSize: 5 * 1024 * 1024
+    },
+
     fileFilter: (req, file, cb) => {
-      const allowed = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif'];
-      cb(null, allowed.includes(file.mimetype));
+
+      const allowed = [
+        'image/jpeg',
+        'image/png',
+        'image/jpg',
+        'image/gif'
+      ];
+
+      if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Format image non autorisé'));
+      }
     }
   });
+
 } else {
-  // Fallback si multer n'est pas disponible
+
   upload = {
     array: () => (req, res, next) => next(),
     single: () => (req, res, next) => next(),
@@ -59,12 +88,10 @@ if (multer && typeof multer === 'function' && multer.diskStorage) {
   };
 }
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// ============================================================
+// MIDDLEWARE
+// ============================================================
 
-// ============================================================
-// MIDDLEWARE DE LOG (pour tracer les requêtes)
-// ============================================================
 app.use((req, res, next) => {
   console.log(`📥 ${req.method} ${req.url}`);
   next();
@@ -72,8 +99,14 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json());
+
+// ============================================================
+// SERVIR LES IMAGES
+// ============================================================
+
 app.use('/uploads', express.static(uploadDir));
 
+console.log('🖼️ Images accessibles via /uploads');
 // ============================================================
 // 1. INITIALISATION FIREBASE ADMIN (ROBUSTE)
 // ============================================================
