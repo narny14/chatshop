@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.shop9",
+      "sha256_cert_fingerprints": [
+        "99:B6:EA:E2:E3:06:C0:5D:AA:85:C1:5C:97:59:E2:EA:0E:B1:AC:4B:A1:85:97:55:F1:85:D7:02:3B:68:88:FF"
+      ]
+    }
+  }
+]

@@ -11,6 +11,7 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+
 // ============================================================
 // DOSSIER DES IMAGES
 // ============================================================
@@ -120,6 +121,18 @@ console.log(
   )
 );
 console.log('=================================');
+
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  res.type("application/json");
+
+  res.sendFile(
+    path.join(
+      __dirname,
+      ".well-known",
+      "assetlinks.json"
+    )
+  );
+});
 // ============================================================
 // 1. INITIALISATION FIREBASE ADMIN (ROBUSTE)
 // ============================================================
