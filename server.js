@@ -143,13 +143,14 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
 // ============================================================
 
 // ============================================================
-// FIREBASE ADMIN
+// FIREBASE ADMIN - FICHIER DANS DOSSIER PERMANENT
 // ============================================================
 
 let firebaseReady = false;
 let firebaseApp = null;
 
 function initFirebase() {
+
   try {
 
     console.log("=================================");
@@ -157,7 +158,7 @@ function initFirebase() {
     console.log("=================================");
 
     // ========================================================
-    // CHEMIN PERMANENT DU SERVEUR
+    // CHEMIN PERMANENT
     // ========================================================
 
     const serviceAccountPath =
@@ -169,7 +170,7 @@ function initFirebase() {
     );
 
     // ========================================================
-    // VÉRIFIER QUE LE FICHIER EXISTE
+    // VÉRIFICATION DU FICHIER
     // ========================================================
 
     if (!fs.existsSync(serviceAccountPath)) {
@@ -186,16 +187,15 @@ function initFirebase() {
     );
 
     // ========================================================
-    // LIRE LE FICHIER
+    // LECTURE DU JSON
     // ========================================================
 
-    const serviceAccount =
-      JSON.parse(
-        fs.readFileSync(
-          serviceAccountPath,
-          "utf8"
-        )
-      );
+    const serviceAccount = JSON.parse(
+      fs.readFileSync(
+        serviceAccountPath,
+        "utf8"
+      )
+    );
 
     // ========================================================
     // VÉRIFICATIONS
@@ -226,7 +226,7 @@ function initFirebase() {
     }
 
     // ========================================================
-    // NETTOYAGE PRIVATE KEY
+    // CORRECTION DES \n
     // ========================================================
 
     serviceAccount.private_key =
@@ -235,7 +235,7 @@ function initFirebase() {
         .trim();
 
     // ========================================================
-    // LOGS DE CONTRÔLE
+    // INFORMATIONS
     // ========================================================
 
     console.log(
@@ -295,10 +295,12 @@ function initFirebase() {
     // ========================================================
 
     firebaseApp = admin.initializeApp({
+
       credential:
         admin.credential.cert(
           serviceAccount
         )
+
     });
 
     firebaseReady = true;
