@@ -258,6 +258,219 @@ async function sendFCMNotification(userId, title, body, data = {}) {
 }
 
 // ============================================================
+// NOTIFICATION NOUVEAU PRODUIT
+// Envoie à TOUS les appareils de la boutique
+// ADMIN + CLIENTS
+// ============================================================
+
+async function sendNewProductNotification({
+  boutiqueId,
+  productId,
+  productType,
+  prix,
+  devise,
+  genre
+}) {
+  if (!firebaseReady) {
+    console.log("⚠️ Firebase non disponible - notification ignorée");
+    return {
+      success: false,
+      successCount: 0,
+      failureCount: 0
+    };
+  }
+
+  try {
+    console.log("======================================");
+    console.log("🔔 NOTIFICATION NOUVEAU PRODUIT");
+    console.log("======================================");
+    console.log("🏪 Boutique :", boutiqueId);
+    console.log("📦 Produit  :", productId);
+    console.log("🏷️ Type     :", productType);
+
+    // --------------------------------------------------------
+    // 1. Récupérer tous les tokens de la boutique
+    // --------------------------------------------------------
+
+    const [rows] = await pool.query(
+      `
+      SELECT id, user_id, phone, fcm_token, is_admin
+      FROM user_fcm_tokens
+      WHERE id_boutique = ?
+        AND fcm_token IS NOT NULL
+        AND TRIM(fcm_token) <> ''
+      `,
+      [boutiqueId]
+    );
+
+    if (!rows || rows.length === 0) {
+      console.log("ℹ️ Aucun token FCM trouvé");
+      return {
+        success: true,
+        successCount: 0,
+        failureCount: 0,
+        total: 0
+      };
+    }
+
+    // --------------------------------------------------------
+    // 2. Nettoyer les tokens + supprimer les doublons
+    // --------------------------------------------------------
+
+    const uniqueTokens = [
+      ...new Set(
+        rows
+          .map(row => String(row.fcm_token || "").trim())
+          .filter(token => token.length > 0)
+      )
+    ];
+
+    console.log(
+      `📱 Utilisateurs trouvés : ${rows.length}`
+    );
+
+    console.log(
+      `📱 Tokens uniques : ${uniqueTokens.length}`
+    );
+
+    if (uniqueTokens.length === 0) {
+      return {
+        success: true,
+        successCount: 0,
+        failureCount: 0,
+        total: 0
+      };
+    }
+
+    // --------------------------------------------------------
+    // 3. Message FCM
+    // --------------------------------------------------------
+
+    const message = {
+      tokens: uniqueTokens,
+
+      notification: {
+        title: `🆕 Nouveau produit : ${productType}`,
+        body: `${prix} ${devise} - ${genre || "Nouvelle arrivée"}`
+      },
+
+      data: {
+        type: "new_product",
+        product_id: String(productId),
+        id_boutique: String(boutiqueId),
+        product_type: String(productType || ""),
+        prix: String(prix || ""),
+        devise: String(devise || ""),
+        genre: String(genre || ""),
+        timestamp: String(Date.now())
+      },
+
+      android: {
+        priority: "high",
+
+        notification: {
+          channelId: "client_notifications",
+          sound: "default"
+        }
+      }
+    };
+
+    // --------------------------------------------------------
+    // 4. Envoi multicast
+    // --------------------------------------------------------
+
+    const result = await admin
+      .messaging()
+      .sendEachForMulticast(message);
+
+    console.log(
+      `✅ FCM envoyé : ${result.successCount} succès`
+    );
+
+    console.log(
+      `❌ FCM échoué : ${result.failureCount}`
+    );
+
+    // --------------------------------------------------------
+    // 5. Nettoyer les tokens invalides
+    // --------------------------------------------------------
+
+    if (result.failureCount > 0) {
+
+      for (let i = 0; i < result.responses.length; i++) {
+
+        const response = result.responses[i];
+
+        if (!response.success) {
+
+          const errorCode =
+            response.error?.code || "";
+
+          const invalidToken =
+            uniqueTokens[i];
+
+          console.log(
+            `⚠️ Token FCM invalide : ${errorCode}`
+          );
+
+          if (
+            errorCode.includes("registration-token-not-registered") ||
+            errorCode.includes("invalid-registration-token")
+          ) {
+
+            try {
+
+              await pool.query(
+                `
+                DELETE FROM user_fcm_tokens
+                WHERE fcm_token = ?
+                `,
+                [invalidToken]
+              );
+
+              console.log(
+                "🗑️ Token invalide supprimé de MySQL"
+              );
+
+            } catch (deleteError) {
+
+              console.error(
+                "❌ Erreur suppression token :",
+                deleteError.message
+              );
+
+            }
+          }
+        }
+      }
+    }
+
+    console.log("======================================");
+
+    return {
+      success: true,
+      successCount: result.successCount,
+      failureCount: result.failureCount,
+      total: uniqueTokens.length
+    };
+
+  } catch (error) {
+
+    console.error(
+      "❌ Erreur notification nouveau produit :",
+      error
+    );
+
+    return {
+      success: false,
+      successCount: 0,
+      failureCount: 0,
+      total: 0,
+      error: error.message
+    };
+  }
+}
+// ============================================================
 // 4. ROUTES DE TEST (DIAGNOSTIC)
 // ============================================================
 app.get('/', (req, res) => {
@@ -1171,112 +1384,36 @@ app.post(
 
 
       // =====================================================
-      // 15. NOTIFICATION FCM
-      // =====================================================
+// 15. NOTIFICATION FCM NOUVEAU PRODUIT
+// =====================================================
 
-      if (
-        typeof firebaseReady !== 'undefined' &&
-        firebaseReady
-      ) {
+let notificationResult = {
+  success: false,
+  successCount: 0,
+  failureCount: 0,
+  total: 0
+};
 
-        try {
+try {
 
-          console.log(
-            `🔔 Recherche des tokens FCM boutique ${boutiqueId}`
-          );
+  notificationResult =
+    await sendNewProductNotification({
+      boutiqueId,
+      productId,
+      productType,
+      prix: parsedPrix,
+      devise: productDevise,
+      genre: productGenre
+    });
 
+} catch (notificationError) {
 
-          const [tokenRows] = await pool.query(
-            `
-            SELECT \`fcm_token\`
-            FROM \`user_fcm_tokens\`
-            WHERE \`id_boutique\` = ?
-            AND \`fcm_token\` IS NOT NULL
-            AND \`fcm_token\` != ''
-            `,
-            [boutiqueId]
-          );
+  console.error(
+    "⚠️ Notification non envoyée :",
+    notificationError.message
+  );
 
-
-          const tokens = tokenRows
-            .map(row => row.fcm_token)
-            .filter(
-              token =>
-                typeof token === 'string' &&
-                token.trim() !== ''
-            );
-
-
-          console.log(
-            `🔔 Tokens FCM trouvés : ${tokens.length}`
-          );
-
-
-          if (tokens.length > 0) {
-
-            const message = {
-
-              notification: {
-                title: `🆕 Nouveau produit : ${productType}`,
-                body:
-                  `${parsedPrix} ${productDevise} - ` +
-                  `${productGenre || 'Nouveauté'}`
-              },
-
-              data: {
-                type: 'new_product',
-                product_id: String(productId),
-                id_boutique: String(boutiqueId)
-              },
-
-              android: {
-                priority: 'high',
-
-                notification: {
-                  sound: 'default',
-                  channelId: 'client_notifications'
-                }
-              }
-
-            };
-
-
-            const sendResult =
-              await admin
-                .messaging()
-                .sendEachForMulticast({
-                  tokens,
-                  ...message
-                });
-
-
-            console.log(
-              `🔔 FCM : ` +
-              `${sendResult.successCount} envoyé(s), ` +
-              `${sendResult.failureCount} échec(s)`
-            );
-
-          } else {
-
-            console.log(
-              `ℹ️ Aucun token FCM pour boutique ${boutiqueId}`
-            );
-          }
-
-
-        } catch (fcmError) {
-
-          // IMPORTANT :
-          // Une erreur FCM ne doit PAS annuler
-          // le produit déjà enregistré.
-
-          console.error(
-            '⚠️ Erreur FCM :',
-            fcmError.message
-          );
-        }
-
-      }
+}
 
 
       // =====================================================
