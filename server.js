@@ -149,103 +149,79 @@ function initFirebase() {
 
   try {
 
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-
-    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
     console.log("=================================");
     console.log("🔥 INITIALISATION FIREBASE");
     console.log("=================================");
 
-    // --------------------------------------------------------
-    // Vérification variables
-    // --------------------------------------------------------
+    const serviceAccountPath = path.join(
+      __dirname,
+      "serviceAccountKey.json"
+    );
 
-    if (!projectId) {
-      throw new Error("FIREBASE_PROJECT_ID manquant");
+    console.log(
+      "📁 Fichier Firebase :",
+      serviceAccountPath
+    );
+
+    if (!fs.existsSync(serviceAccountPath)) {
+      throw new Error(
+        "serviceAccountKey.json introuvable"
+      );
     }
 
-    if (!clientEmail) {
-      throw new Error("FIREBASE_CLIENT_EMAIL manquant");
+    const serviceAccount = JSON.parse(
+      fs.readFileSync(
+        serviceAccountPath,
+        "utf8"
+      )
+    );
+
+    if (!serviceAccount.project_id) {
+      throw new Error(
+        "project_id absent du fichier Firebase"
+      );
     }
 
-    if (!privateKey) {
-      throw new Error("FIREBASE_PRIVATE_KEY manquant");
+    if (!serviceAccount.client_email) {
+      throw new Error(
+        "client_email absent du fichier Firebase"
+      );
     }
 
-    // --------------------------------------------------------
-    // Nettoyage de la clé privée
-    // --------------------------------------------------------
-
-    privateKey = String(privateKey).trim();
-
-    // Retirer les guillemets extérieurs
-    if (
-      privateKey.startsWith('"') &&
-      privateKey.endsWith('"')
-    ) {
-      privateKey = privateKey.slice(1, -1);
+    if (!serviceAccount.private_key) {
+      throw new Error(
+        "private_key absent du fichier Firebase"
+      );
     }
 
-    // Transformer les caractères \n en vrais retours à la ligne
-    privateKey = privateKey.replace(/\\n/g, "\n");
+    console.log(
+      "🔥 Firebase Project ID :",
+      serviceAccount.project_id
+    );
 
-    // Nettoyage final
-    privateKey = privateKey.trim();
-
-    // --------------------------------------------------------
-    // Vérification PEM
-    // --------------------------------------------------------
-
-    const pemStart = "-----BEGIN PRIVATE KEY-----";
-    const pemEnd = "-----END PRIVATE KEY-----";
-
-    console.log("🔥 Firebase Project ID :", projectId);
-    console.log("🔥 Firebase Client Email :", clientEmail);
+    console.log(
+      "🔥 Firebase Client Email :",
+      serviceAccount.client_email
+    );
 
     console.log(
       "🔥 BEGIN PRIVATE KEY :",
-      privateKey.startsWith(pemStart)
+      serviceAccount.private_key.includes(
+        "-----BEGIN PRIVATE KEY-----"
+      )
     );
 
     console.log(
       "🔥 END PRIVATE KEY :",
-      privateKey.endsWith(pemEnd)
+      serviceAccount.private_key.includes(
+        "-----END PRIVATE KEY-----"
+      )
     );
 
-    // --------------------------------------------------------
-    // Validation stricte
-    // --------------------------------------------------------
-
-    if (!privateKey.startsWith(pemStart)) {
-      throw new Error(
-        "FIREBASE_PRIVATE_KEY : mauvais début PEM"
-      );
-    }
-
-    if (!privateKey.endsWith(pemEnd)) {
-      throw new Error(
-        "FIREBASE_PRIVATE_KEY : mauvais fin PEM"
-      );
-    }
-
-    // --------------------------------------------------------
-    // Initialisation Firebase
-    // --------------------------------------------------------
-
     firebaseApp = admin.initializeApp({
-
-      credential: admin.credential.cert({
-
-        projectId: projectId,
-
-        clientEmail: clientEmail,
-
-        privateKey: privateKey
-
-      })
-
+      credential: admin.credential.cert(
+        serviceAccount
+      )
     });
 
     firebaseReady = true;
