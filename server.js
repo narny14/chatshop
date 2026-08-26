@@ -172,7 +172,46 @@ function initFirebase() {
     // ========================================================
     // VÉRIFICATION DU FICHIER
     // ========================================================
+console.log("=================================");
+console.log("🔎 TEST FICHIER FIREBASE");
+console.log("=================================");
 
+console.log(
+  "📁 Chemin testé :",
+  serviceAccountPath
+);
+
+console.log(
+  "📂 Dossier parent existe :",
+  fs.existsSync(
+    "/home/u641923167/domains/bytesshop.byteatomeneons.com/firebase"
+  )
+);
+
+console.log(
+  "📄 Fichier existe :",
+  fs.existsSync(serviceAccountPath)
+);
+
+try {
+
+  console.log(
+    "📂 Contenu du dossier firebase :",
+    fs.readdirSync(
+      "/home/u641923167/domains/bytesshop.byteatomeneons.com/firebase"
+    )
+  );
+
+} catch (e) {
+
+  console.log(
+    "❌ Impossible de lire le dossier :",
+    e.message
+  );
+
+}
+
+console.log("=================================");
     if (!fs.existsSync(serviceAccountPath)) {
 
       throw new Error(
