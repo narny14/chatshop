@@ -10,6 +10,7 @@ const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const PUBLIC_BASE_URL = "https://bytesshop.byteatomeneons.com";
 
 
 // ============================================================
@@ -1312,7 +1313,7 @@ app.post(
             .filter(file => file && file.filename)
             .map(file => ({
               filename: file.filename,
-              url: `/uploads/${file.filename}`
+              url: `${PUBLIC_BASE_URL}/uploads/${file.filename}`
             })),
 
           images_count:
@@ -1621,7 +1622,7 @@ app.get('/backend/products/:id', async (req, res) => {
     );
     const images = imageRows.map(row => ({
       id: row.id,
-      url: `uploads/${row.image}`,
+      url: `${PUBLIC_BASE_URL}/uploads/${row.image}`,
       filename: row.image,
       created_at: row.created_at
     }));
@@ -1726,7 +1727,7 @@ app.get('/backend/products/:id/images', async (req, res) => {
     );
     const images = rows.map(row => ({
       id: row.id,
-      url: `uploads/${row.image}`,
+      url: `${PUBLIC_BASE_URL}/uploads/${row.image}`,
       filename: row.image,
       created_at: row.created_at
     }));
@@ -1791,7 +1792,7 @@ app.post('/backend/products/:id/update', upload.array('new_images[]', 10), async
     const [imageRows] = await pool.query('SELECT id, image FROM images WHERE id_produit = ? ORDER BY id ASC', [productId]);
     const allImages = imageRows.map(row => ({
       id: row.id,
-      url: `uploads/${row.image}`,
+      url: `${PUBLIC_BASE_URL}/uploads/${row.image}`,
       filename: row.image
     }));
 
