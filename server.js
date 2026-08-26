@@ -137,57 +137,314 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
 // ============================================================
 // 1. INITIALISATION FIREBASE ADMIN (ROBUSTE)
 // ============================================================
+
+// ============================================================
+// FIREBASE ADMIN
+// ============================================================
+
 let firebaseReady = false;
+let firebaseApp = null;
 
-function cleanPrivateKey(key) {
-  if (!key) return null;
-  let cleaned = key.replace(/^["']|["']$/g, '').trim();
-  if (cleaned.includes('\\n')) cleaned = cleaned.replace(/\\n/g, '\n');
-  return cleaned;
-}
+function initFirebase() {
 
-function getFirebaseCredentials() {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  if (privateKey) privateKey = cleanPrivateKey(privateKey);
-  if (projectId && clientEmail && privateKey) return { projectId, clientEmail, privateKey };
   try {
-    const keyPath = path.join(__dirname, 'serviceAccountKey.json');
-    if (fs.existsSync(keyPath)) {
-      const json = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-      const pk = json.private_key || json.privateKey;
-      return {
-        projectId: json.project_id || json.projectId,
-        clientEmail: json.client_email || json.clientEmail,
-        privateKey: cleanPrivateKey(pk)
-      };
+
+    console.log("=================================");
+    console.log("🔥 INITIALISATION FIREBASE");
+    console.log("=================================");
+
+    const projectId =
+      String(process.env.FIREBASE_PROJECT_ID || "").trim();
+
+    const clientEmail =
+      String(process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+
+    let privateKey =
+      process.env.FIREBASE_PRIVATE_KEY;
+
+    // --------------------------------------------------------
+    // Vérification
+    // --------------------------------------------------------
+
+    if (!projectId) {
+      throw new Error(
+        "FIREBASE_PROJECT_ID manquant"
+      );
     }
-  } catch (e) {
-    console.warn('⚠️ Erreur lecture fichier clé:', e.message);
-  }
-  return null;
-}
 
-try {
-  const creds = getFirebaseCredentials();
-  if (creds && creds.projectId && creds.clientEmail && creds.privateKey) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: creds.projectId,
-        clientEmail: creds.clientEmail,
-        privateKey: creds.privateKey
-      })
-    });
+    if (!clientEmail) {
+      throw new Error(
+        "FIREBASE_CLIENT_EMAIL manquant"
+      );
+    }
+
+    if (!privateKey) {
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY manquant"
+      );
+    }
+
+    // --------------------------------------------------------
+    // Convertir en String
+    // --------------------------------------------------------
+
+    privateKey = String(privateKey);
+
+    // --------------------------------------------------------
+    // Supprimer guillemets éventuels
+    // --------------------------------------------------------
+
+    if (
+      privateKey.startsWith('"') &&
+      privateKey.endsWith('"')
+    ) {
+
+      privateKey =
+        privateKey.slice(1, -1);
+
+    }
+
+    if (
+      privateKey.startsWith("'") &&
+      privateKey.endsWith("'")
+    ) {
+
+      privateKey =
+        privateKey.slice(1, -1);
+
+    }
+
+    // --------------------------------------------------------
+    // IMPORTANT :
+    // transformer \n en vrais retours à la ligne
+    // --------------------------------------------------------
+
+    privateKey =
+      privateKey.replace(/\\n/g, "\n");
+
+    // --------------------------------------------------------
+    // Supprimer les CR Windows
+    // --------------------------------------------------------
+
+    privateKey =
+      privateKey.replace(/\r/g, "");
+
+    // --------------------------------------------------------
+    // Nettoyage
+    // --------------------------------------------------------
+
+    privateKey =
+      privateKey.trim();
+
+    // --------------------------------------------------------
+    // Vérification BEGIN
+    // --------------------------------------------------------
+
+    if (
+      !privateKey.includes(
+        "-----BEGIN PRIVATE KEY-----"
+      )
+    ) {
+
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY : BEGIN PRIVATE KEY absent"
+      );
+
+    }
+
+    // --------------------------------------------------------
+    // Vérification END
+    // --------------------------------------------------------
+
+    if (
+      !privateKey.includes(
+        "-----END PRIVATE KEY-----"
+      )
+    ) {
+
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY : END PRIVATE KEY absent"
+      );
+
+    }
+
+    // --------------------------------------------------------
+    // Vérifier position BEGIN
+    // --------------------------------------------------------
+
+    if (
+      !privateKey.startsWith(
+        "-----BEGIN PRIVATE KEY-----"
+      )
+    ) {
+
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY : mauvais début PEM"
+      );
+
+    }
+
+    // --------------------------------------------------------
+    // Vérifier position END
+    // --------------------------------------------------------
+
+    if (
+      !privateKey.endsWith(
+        "-----END PRIVATE KEY-----"
+      )
+    ) {
+
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY : mauvais fin PEM"
+      );
+
+    }
+
+    // --------------------------------------------------------
+    // Informations DEBUG SÉCURISÉES
+    // --------------------------------------------------------
+
+    console.log(
+      "🔥 Firebase Project ID :",
+      projectId
+    );
+
+    console.log(
+      "🔥 Firebase Client Email :",
+      clientEmail
+    );
+
+    console.log(
+      "🔥 BEGIN détecté :",
+      privateKey.includes(
+        "-----BEGIN PRIVATE KEY-----"
+      )
+    );
+
+    console.log(
+      "🔥 END détecté :",
+      privateKey.includes(
+        "-----END PRIVATE KEY-----"
+      )
+    );
+
+    console.log(
+      "🔥 Longueur clé :",
+      privateKey.length
+    );
+
+    console.log(
+      "🔥 Nombre de lignes :",
+      privateKey.split("\n").length
+    );
+
+    // --------------------------------------------------------
+    // INITIALISER FIREBASE
+    // --------------------------------------------------------
+
+    if (admin.apps.length > 0) {
+
+      firebaseApp =
+        admin.app();
+
+    } else {
+
+      firebaseApp =
+        admin.initializeApp({
+
+          credential:
+            admin.credential.cert({
+
+              projectId:
+                projectId,
+
+              clientEmail:
+                clientEmail,
+
+              privateKey:
+                privateKey
+
+            })
+
+        });
+
+    }
+
     firebaseReady = true;
-    console.log('✅ Firebase Admin initialisé');
-  } else {
-    console.warn('⚠️ Firebase non configuré (variables manquantes)');
+
+    console.log("=================================");
+    console.log("✅ FIREBASE ADMIN INITIALISÉ");
+    console.log("✅ FCM DISPONIBLE");
+    console.log("=================================");
+
+    return firebaseApp;
+
+  } catch (error) {
+
+    firebaseReady = false;
+    firebaseApp = null;
+
+    console.error("=================================");
+    console.error("❌ ERREUR FIREBASE");
+    console.error("=================================");
+    console.error(
+      error.message
+    );
+    console.error("=================================");
+    console.error(
+      "⚠️ FCM DÉSACTIVÉ"
+    );
+    console.error("=================================");
+
+    return null;
   }
-} catch (error) {
-  console.error('❌ Erreur Firebase:', error.message);
 }
 
+// Lancer Firebase
+initFirebase();
+app.get("/backend/test-firebase", async (req, res) => {
+
+  try {
+
+    if (!firebaseReady || !firebaseApp) {
+
+      return res.status(500).json({
+
+        success: false,
+
+        firebaseReady: false,
+
+        message:
+          "Firebase Admin n'est pas initialisé"
+
+      });
+
+    }
+
+    return res.json({
+
+      success: true,
+
+      firebaseReady: true,
+
+      message:
+        "Firebase Admin fonctionne correctement"
+
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+
+      success: false,
+
+      error: error.message
+
+    });
+
+  }
+
+});
 // ============================================================
 // 2. CONNEXION MYSQL
 // ============================================================
@@ -230,30 +487,155 @@ setInterval(async () => {
 // ============================================================
 // 3. FONCTION FCM (avec vérification firebaseReady)
 // ============================================================
-async function sendFCMNotification(userId, title, body, data = {}) {
-  if (!firebaseReady) {
-    console.log('⚠️ Firebase non initialisé, notification ignorée');
-    return false;
-  }
+// ============================================================
+// ENVOI NOTIFICATION FCM
+// ============================================================
+
+async function sendFCMNotification(tokens, title, body, data = {}) {
+
   try {
-    const [rows] = await pool.query('SELECT fcm_token FROM user_fcm_tokens WHERE id = ?', [userId]);
-    if (!rows.length || !rows[0].fcm_token) {
-      console.log(`❌ Aucun token FCM pour l'utilisateur ${userId}`);
-      return false;
+
+    if (!firebaseReady || !firebaseApp) {
+
+      console.error(
+        "❌ Firebase non disponible - notification impossible"
+      );
+
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: 0,
+        total: 0,
+      };
     }
-    const token = rows[0].fcm_token;
+
+    // --------------------------------------------------------
+    // NORMALISATION DES TOKENS
+    // --------------------------------------------------------
+
+    if (!Array.isArray(tokens)) {
+      tokens = [tokens];
+    }
+
+    tokens = tokens
+      .filter(token => token)
+      .map(token => String(token).trim());
+
+    if (tokens.length === 0) {
+
+      console.log("⚠️ Aucun token FCM disponible");
+
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: 0,
+        total: 0,
+      };
+    }
+
+    console.log(
+      `📨 Envoi FCM à ${tokens.length} appareil(s)`
+    );
+
+    // --------------------------------------------------------
+    // FIREBASE MULTICAST
+    // --------------------------------------------------------
+
     const message = {
-      notification: { title, body },
-      data: { ...data, type: 'new_message', timestamp: new Date().toISOString() },
-      android: { priority: 'high', notification: { sound: 'default', channelId: 'client_notifications' } },
-      token
+      tokens,
+
+      notification: {
+        title: String(title),
+        body: String(body),
+      },
+
+      data: Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [
+          key,
+          String(value),
+        ])
+      ),
+
+      android: {
+        priority: "high",
+
+        notification: {
+          channelId: "default",
+          sound: "default",
+        },
+      },
+
+      apns: {
+        payload: {
+          aps: {
+            sound: "default",
+          },
+        },
+      },
     };
-    await admin.messaging().send(message);
-    console.log(`✅ Notification envoyée à ${userId}`);
-    return true;
+
+    const response =
+      await admin.messaging().sendEachForMulticast(message);
+
+    console.log("=================================");
+    console.log("📨 RÉSULTAT FCM");
+    console.log("=================================");
+
+    console.log(
+      "✅ Succès :",
+      response.successCount
+    );
+
+    console.log(
+      "❌ Échecs :",
+      response.failureCount
+    );
+
+    console.log(
+      "📱 Total :",
+      tokens.length
+    );
+
+    // --------------------------------------------------------
+    // AFFICHER LES ERREURS
+    // --------------------------------------------------------
+
+    response.responses.forEach((result, index) => {
+
+      if (!result.success) {
+
+        console.error(
+          `❌ Token ${index} :`,
+          result.error?.code,
+          result.error?.message
+        );
+
+      }
+
+    });
+
+    console.log("=================================");
+
+    return {
+      success: response.successCount > 0,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      total: tokens.length,
+    };
+
   } catch (error) {
-    console.error('❌ Erreur FCM:', error);
-    return false;
+
+    console.error(
+      "❌ Erreur envoi FCM :",
+      error
+    );
+
+    return {
+      success: false,
+      successCount: 0,
+      failureCount: tokens.length,
+      total: tokens.length,
+    };
   }
 }
 
@@ -261,6 +643,12 @@ async function sendFCMNotification(userId, title, body, data = {}) {
 // NOTIFICATION NOUVEAU PRODUIT
 // Envoie à TOUS les appareils de la boutique
 // ADMIN + CLIENTS
+// ============================================================
+
+// ============================================================
+// NOTIFICATION NOUVEAU PRODUIT
+// Envoie une notification à tous les appareils
+// de la boutique concernée
 // ============================================================
 
 async function sendNewProductNotification({
@@ -271,30 +659,89 @@ async function sendNewProductNotification({
   devise,
   genre
 }) {
-  if (!firebaseReady) {
-    console.log("⚠️ Firebase non disponible - notification ignorée");
+
+  console.log("======================================");
+  console.log("🔔 NOTIFICATION NOUVEAU PRODUIT");
+  console.log("======================================");
+
+  console.log("🏪 Boutique :", boutiqueId);
+  console.log("📦 Produit  :", productId);
+  console.log("🏷️ Type     :", productType);
+  console.log("💰 Prix     :", prix);
+  console.log("💵 Devise   :", devise);
+  console.log("👤 Genre    :", genre);
+
+  // ----------------------------------------------------------
+  // Vérification Firebase
+  // ----------------------------------------------------------
+
+  if (!firebaseReady || !firebaseApp) {
+
+    console.log(
+      "⚠️ Firebase non disponible - notification ignorée"
+    );
+
     return {
       success: false,
       successCount: 0,
-      failureCount: 0
+      failureCount: 0,
+      total: 0,
+      error: "Firebase non disponible"
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Vérification boutique
+  // ----------------------------------------------------------
+
+  if (!boutiqueId) {
+
+    console.error(
+      "❌ boutiqueId manquant"
+    );
+
+    return {
+      success: false,
+      successCount: 0,
+      failureCount: 0,
+      total: 0,
+      error: "boutiqueId manquant"
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Vérification produit
+  // ----------------------------------------------------------
+
+  if (!productId) {
+
+    console.error(
+      "❌ productId manquant"
+    );
+
+    return {
+      success: false,
+      successCount: 0,
+      failureCount: 0,
+      total: 0,
+      error: "productId manquant"
     };
   }
 
   try {
-    console.log("======================================");
-    console.log("🔔 NOTIFICATION NOUVEAU PRODUIT");
-    console.log("======================================");
-    console.log("🏪 Boutique :", boutiqueId);
-    console.log("📦 Produit  :", productId);
-    console.log("🏷️ Type     :", productType);
 
     // --------------------------------------------------------
-    // 1. Récupérer tous les tokens de la boutique
+    // 1. RÉCUPÉRER LES TOKENS FCM
     // --------------------------------------------------------
 
     const [rows] = await pool.query(
       `
-      SELECT id, user_id, phone, fcm_token, is_admin
+      SELECT
+        id,
+        user_id,
+        phone,
+        fcm_token,
+        is_admin
       FROM user_fcm_tokens
       WHERE id_boutique = ?
         AND fcm_token IS NOT NULL
@@ -303,8 +750,20 @@ async function sendNewProductNotification({
       [boutiqueId]
     );
 
+    console.log(
+      `📱 ${rows.length} enregistrement(s) FCM trouvé(s)`
+    );
+
+    // --------------------------------------------------------
+    // Aucun token
+    // --------------------------------------------------------
+
     if (!rows || rows.length === 0) {
-      console.log("ℹ️ Aucun token FCM trouvé");
+
+      console.log(
+        "ℹ️ Aucun utilisateur avec un token FCM"
+      );
+
       return {
         success: true,
         successCount: 0,
@@ -314,26 +773,29 @@ async function sendNewProductNotification({
     }
 
     // --------------------------------------------------------
-    // 2. Nettoyer les tokens + supprimer les doublons
+    // 2. NETTOYER LES TOKENS
     // --------------------------------------------------------
 
     const uniqueTokens = [
       ...new Set(
         rows
-          .map(row => String(row.fcm_token || "").trim())
+          .map(row =>
+            String(row.fcm_token || "").trim()
+          )
           .filter(token => token.length > 0)
       )
     ];
-
-    console.log(
-      `📱 Utilisateurs trouvés : ${rows.length}`
-    );
 
     console.log(
       `📱 Tokens uniques : ${uniqueTokens.length}`
     );
 
     if (uniqueTokens.length === 0) {
+
+      console.log(
+        "⚠️ Aucun token FCM valide"
+      );
+
       return {
         success: true,
         successCount: 0,
@@ -343,121 +805,108 @@ async function sendNewProductNotification({
     }
 
     // --------------------------------------------------------
-    // 3. Message FCM
+    // 3. PRÉPARER LA NOTIFICATION
     // --------------------------------------------------------
 
-    const message = {
-      tokens: uniqueTokens,
+    const title =
+      `🆕 Nouveau produit : ${productType || "Produit"}`;
 
-      notification: {
-        title: `🆕 Nouveau produit : ${productType}`,
-        body: `${prix} ${devise} - ${genre || "Nouvelle arrivée"}`
-      },
+    const body =
+      `${prix || ""} ${devise || ""} - ${
+        genre || "Nouvelle arrivée"
+      }`;
 
-      data: {
-        type: "new_product",
-        product_id: String(productId),
-        id_boutique: String(boutiqueId),
-        product_type: String(productType || ""),
-        prix: String(prix || ""),
-        devise: String(devise || ""),
-        genre: String(genre || ""),
-        timestamp: String(Date.now())
-      },
+    const data = {
 
-      android: {
-        priority: "high",
+      type: "new_product",
 
-        notification: {
-          channelId: "client_notifications",
-          sound: "default"
-        }
-      }
+      product_id:
+        String(productId),
+
+      id_boutique:
+        String(boutiqueId),
+
+      product_type:
+        String(productType || ""),
+
+      prix:
+        String(prix || ""),
+
+      devise:
+        String(devise || ""),
+
+      genre:
+        String(genre || ""),
+
+      timestamp:
+        String(Date.now())
     };
 
-    // --------------------------------------------------------
-    // 4. Envoi multicast
-    // --------------------------------------------------------
+    console.log("======================================");
+    console.log("📨 ENVOI FCM");
+    console.log("======================================");
 
-    const result = await admin
-      .messaging()
-      .sendEachForMulticast(message);
-
+    console.log("Title :", title);
+    console.log("Body  :", body);
+    console.log("Data  :", data);
     console.log(
-      `✅ FCM envoyé : ${result.successCount} succès`
-    );
-
-    console.log(
-      `❌ FCM échoué : ${result.failureCount}`
+      "Tokens :",
+      uniqueTokens.length
     );
 
     // --------------------------------------------------------
-    // 5. Nettoyer les tokens invalides
+    // 4. UTILISER NOTRE FONCTION FCM UNIQUE
     // --------------------------------------------------------
 
-    if (result.failureCount > 0) {
+    const notificationResult =
+      await sendFCMNotification(
+        uniqueTokens,
+        title,
+        body,
+        data
+      );
 
-      for (let i = 0; i < result.responses.length; i++) {
+    console.log("======================================");
+    console.log("📨 RÉSULTAT NOTIFICATION");
+    console.log("======================================");
 
-        const response = result.responses[i];
+    console.log(
+      "✅ Succès :",
+      notificationResult.successCount
+    );
 
-        if (!response.success) {
+    console.log(
+      "❌ Échecs :",
+      notificationResult.failureCount
+    );
 
-          const errorCode =
-            response.error?.code || "";
+    console.log(
+      "📱 Total :",
+      notificationResult.total
+    );
 
-          const invalidToken =
-            uniqueTokens[i];
+    // --------------------------------------------------------
+    // 5. SUPPRESSION DES TOKENS INVALIDES
+    // --------------------------------------------------------
 
-          console.log(
-            `⚠️ Token FCM invalide : ${errorCode}`
-          );
-
-          if (
-            errorCode.includes("registration-token-not-registered") ||
-            errorCode.includes("invalid-registration-token")
-          ) {
-
-            try {
-
-              await pool.query(
-                `
-                DELETE FROM user_fcm_tokens
-                WHERE fcm_token = ?
-                `,
-                [invalidToken]
-              );
-
-              console.log(
-                "🗑️ Token invalide supprimé de MySQL"
-              );
-
-            } catch (deleteError) {
-
-              console.error(
-                "❌ Erreur suppression token :",
-                deleteError.message
-              );
-
-            }
-          }
-        }
-      }
-    }
+    // Cette partie est déjà gérée par sendFCMNotification()
+    // si tu veux la centraliser.
+    //
+    // On ne refait donc PAS un deuxième envoi ici.
 
     console.log("======================================");
 
-    return {
-      success: true,
-      successCount: result.successCount,
-      failureCount: result.failureCount,
-      total: uniqueTokens.length
-    };
+    return notificationResult;
 
   } catch (error) {
 
+    console.error("======================================");
     console.error(
-      "❌ Erreur notification nouveau produit :",
+      "❌ ERREUR sendNewProductNotification"
+    );
+    console.error("======================================");
+
+    console.error(
       error
     );
 
@@ -1396,25 +1845,42 @@ let notificationResult = {
 
 try {
 
-  notificationResult =
+  const notificationResult =
     await sendNewProductNotification({
-      boutiqueId,
-      productId,
-      productType,
-      prix: parsedPrix,
-      devise: productDevise,
-      genre: productGenre
+
+      boutiqueId: id_boutique,
+      productId: productId,
+      productType: type,
+      prix: prix,
+      devise: devise,
+      genre: genre
+
     });
+
+  if (notificationResult.success) {
+
+    console.log(
+      `✅ Notification nouveau produit envoyée : ` +
+      `${notificationResult.successCount}/${notificationResult.total}`
+    );
+
+  } else {
+
+    console.log(
+      "⚠️ Notification non envoyée :",
+      notificationResult.error || "raison inconnue"
+    );
+
+  }
 
 } catch (notificationError) {
 
   console.error(
-    "⚠️ Notification non envoyée :",
+    "❌ Erreur FCM :",
     notificationError.message
   );
 
 }
-
 
       // =====================================================
       // 16. RÉPONSE AU MOBILE
