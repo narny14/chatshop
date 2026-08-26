@@ -146,10 +146,14 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
 // FIREBASE ADMIN - FICHIER DANS DOSSIER PERMANENT
 // ============================================================
 
+// ============================================================
+// FIREBASE ADMIN - FICHIER SERVICE ACCOUNT
+// ============================================================
+
 let firebaseReady = false;
 let firebaseApp = null;
 
-function initFirebase() {
+async function initFirebase() {
 
   try {
 
@@ -157,88 +161,34 @@ function initFirebase() {
     console.log("🔥 INITIALISATION FIREBASE");
     console.log("=================================");
 
-    // ========================================================
-    // CHEMIN PERMANENT
-    // ========================================================
-
-    const serviceAccountPath =
-      "/home/u641923167/domains/bytesshop.byteatomeneons.com/firebase/serviceAccountKey.json";
+    const serviceAccountUrl =
+      "https://bytesshop.byteatomeneons.com/serviceAccountKey.json";
 
     console.log(
-      "📁 Fichier Firebase :",
-      serviceAccountPath
+      "🌐 Fichier Firebase :",
+      serviceAccountUrl
     );
 
-    // ========================================================
-    // VÉRIFICATION DU FICHIER
-    // ========================================================
-console.log("=================================");
-console.log("🔎 TEST FICHIER FIREBASE");
-console.log("=================================");
+    // --------------------------------------------------------
+    // RÉCUPÉRATION DU FICHIER JSON
+    // --------------------------------------------------------
 
-console.log(
-  "📁 Chemin testé :",
-  serviceAccountPath
-);
+    const response = await fetch(serviceAccountUrl);
 
-console.log(
-  "📂 Dossier parent existe :",
-  fs.existsSync(
-    "/home/u641923167/domains/bytesshop.byteatomeneons.com/firebase"
-  )
-);
-
-console.log(
-  "📄 Fichier existe :",
-  fs.existsSync(serviceAccountPath)
-);
-
-try {
-
-  console.log(
-    "📂 Contenu du dossier firebase :",
-    fs.readdirSync(
-      "/home/u641923167/domains/bytesshop.byteatomeneons.com/firebase"
-    )
-  );
-
-} catch (e) {
-
-  console.log(
-    "❌ Impossible de lire le dossier :",
-    e.message
-  );
-
-}
-
-console.log("=================================");
-    if (!fs.existsSync(serviceAccountPath)) {
+    if (!response.ok) {
 
       throw new Error(
-        "serviceAccountKey.json introuvable : " +
-        serviceAccountPath
+        `Impossible de récupérer serviceAccountKey.json : HTTP ${response.status}`
       );
 
     }
 
-    console.log(
-      "✅ serviceAccountKey.json trouvé"
-    );
+    const serviceAccount =
+      await response.json();
 
-    // ========================================================
-    // LECTURE DU JSON
-    // ========================================================
-
-    const serviceAccount = JSON.parse(
-      fs.readFileSync(
-        serviceAccountPath,
-        "utf8"
-      )
-    );
-
-    // ========================================================
+    // --------------------------------------------------------
     // VÉRIFICATIONS
-    // ========================================================
+    // --------------------------------------------------------
 
     if (!serviceAccount.project_id) {
 
@@ -259,23 +209,10 @@ console.log("=================================");
     if (!serviceAccount.private_key) {
 
       throw new Error(
-        "private_key absent du fichier Firebase"
+        "private_key absente du fichier Firebase"
       );
 
     }
-
-    // ========================================================
-    // CORRECTION DES \n
-    // ========================================================
-
-    serviceAccount.private_key =
-      serviceAccount.private_key
-        .replace(/\\n/g, "\n")
-        .trim();
-
-    // ========================================================
-    // INFORMATIONS
-    // ========================================================
 
     console.log(
       "🔥 Firebase Project ID :",
@@ -286,6 +223,16 @@ console.log("=================================");
       "🔥 Firebase Client Email :",
       serviceAccount.client_email
     );
+
+    // --------------------------------------------------------
+    // CORRECTION DES \n
+    // --------------------------------------------------------
+
+    serviceAccount.private_key =
+      serviceAccount.private_key.replace(
+        /\\n/g,
+        "\n"
+      );
 
     console.log(
       "🔥 BEGIN PRIVATE KEY :",
@@ -301,9 +248,9 @@ console.log("=================================");
       )
     );
 
-    // ========================================================
-    // VALIDATION PEM
-    // ========================================================
+    // --------------------------------------------------------
+    // VALIDATION DE LA CLÉ
+    // --------------------------------------------------------
 
     if (
       !serviceAccount.private_key.includes(
@@ -312,7 +259,7 @@ console.log("=================================");
     ) {
 
       throw new Error(
-        "FIREBASE_PRIVATE_KEY : mauvais début PEM"
+        "private_key : mauvais début PEM"
       );
 
     }
@@ -324,14 +271,14 @@ console.log("=================================");
     ) {
 
       throw new Error(
-        "FIREBASE_PRIVATE_KEY : mauvaise fin PEM"
+        "private_key : mauvaise fin PEM"
       );
 
     }
 
-    // ========================================================
+    // --------------------------------------------------------
     // INITIALISATION FIREBASE
-    // ========================================================
+    // --------------------------------------------------------
 
     firebaseApp = admin.initializeApp({
 
@@ -367,7 +314,6 @@ console.log("=================================");
     return null;
   }
 }
-
 initFirebase();
 app.get("/backend/test-firebase", async (req, res) => {
 
