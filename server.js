@@ -142,54 +142,101 @@ app.get("/.well-known/assetlinks.json", (req, res) => {
 // FIREBASE ADMIN
 // ============================================================
 
+// ============================================================
+// FIREBASE ADMIN
+// ============================================================
+
 let firebaseReady = false;
 let firebaseApp = null;
 
 function initFirebase() {
-
   try {
 
     console.log("=================================");
     console.log("🔥 INITIALISATION FIREBASE");
     console.log("=================================");
 
-    const serviceAccountPath = path.join(
-      __dirname,
-      "serviceAccountKey.json"
-    );
+    // ========================================================
+    // CHEMIN PERMANENT DU SERVEUR
+    // ========================================================
+
+    const serviceAccountPath =
+      "/home/u641923167/domains/bytesshop.byteatomeneons.com/firebase/serviceAccountKey.json";
 
     console.log(
       "📁 Fichier Firebase :",
       serviceAccountPath
     );
 
+    // ========================================================
+    // VÉRIFIER QUE LE FICHIER EXISTE
+    // ========================================================
+
     if (!fs.existsSync(serviceAccountPath)) {
+
       throw new Error(
-        "serviceAccountKey.json introuvable"
+        "serviceAccountKey.json introuvable : " +
+        serviceAccountPath
       );
+
     }
 
-    const serviceAccount = JSON.parse(
-      fs.readFileSync(
-        serviceAccountPath,
-        "utf8"
-      )
+    console.log(
+      "✅ serviceAccountKey.json trouvé"
     );
 
+    // ========================================================
+    // LIRE LE FICHIER
+    // ========================================================
+
+    const serviceAccount =
+      JSON.parse(
+        fs.readFileSync(
+          serviceAccountPath,
+          "utf8"
+        )
+      );
+
+    // ========================================================
+    // VÉRIFICATIONS
+    // ========================================================
+
     if (!serviceAccount.project_id) {
+
       throw new Error(
         "project_id absent du fichier Firebase"
       );
+
     }
 
     if (!serviceAccount.client_email) {
+
       throw new Error(
         "client_email absent du fichier Firebase"
       );
+
     }
 
-    // 🔐 ON REMPLACE LA CLÉ DU FICHIER
-    serviceAccount.private_key = `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDWXkLYy8W21+v2\nTWEwV0WQU3qbij54oLamPMUKAOmiuigiGMUYuXk7Fy9uEkWBKWbPVL2s8vJBmSx5\nVDyhDeIaGPF0TZA+8xrwaXvlAEkNqcL1ODUmCdZ/F6gkUO406IZVcNdv5wy4bITh\nWRb21B1N6R2tnmP7s6mmQewPnjgWY5GuhubAVMIEGtErZVtPbrdlHqVMDQXUaguE\nTALaDNPIIcVxJFG2k4r7UyIixyWS5RkpfgBbMzJAsvbpzdxNUus0IHN/JrEC9ZQv\nrnRwa1QscM5crDLAUCFIukp4PGC1faO8oylNUEW1Q1vt5jjZcA5P4fEslyK0G2O2\nZA8DHJMLAgMBAAECggEAEHRwP/RcVK2vjVquBCgezQ/rXTceY0oK2ykJz7vEM1tQ\nxO7b0KSkDqO3+B4E7pllkxkKujtBdBGa6iR++h0QgJ2IVm7oJjzcK4O27YKF5dUx\ng65xCsUK88e2fpslV2a/fdCvzziQFgDJrmnIeBS0iL94XLrH9/eRi5NYPtapSkzt\n6o1wy4bI2M1jC1O+6jy8SkD2hbr9OmaJfETMyIfkNDzxLNkCtMmeaCK1OM9R1PC1\ny3kpfwbb/SHCfc3E9Cd6/oQMtye/Qnags12QyBOzdxnT+uzrMHA6bhHlTcltrAw1\nHSJHkuSAyo/ZTnsL9ndGlh0QbFDrBZqbjsnSVXdCmQKBgQDz4Jxcjn1ZlO0WynXn\nzBOo+YYiDrURVOP0TNaBTNOH26YSPmIiKjAbHoJOFdHZspZxnTtZOqY/uHzu2VrH\npXcuj5ugPIu4eP8wkdu0zpUrj+vIBm3rkw7GF5CH8Swa9vmlEigRUJRZEfLk7K1R\n6C9yncL+qanKDHzkd0zUlBUSLwKBgQDhBiPaasbPODzUU3XoJorlMOC5iHBx24g2\npSZpk5TBvprVO6otyal9jczhrC5pXj/MXyepwOmyMv7lzDmpAoo/HwFg5JnPUZLP\n7ZUlQ7/kivK555YOEmKfqaaSDAS6WKxhxPF3FtYECH/Ec1jrQx60HNeAxC3v7hkp\nKd8Kgzjh5QKBgQDilMeRcs1hYm1YpGghIUkO0C3gDJwL6zwTKSSOYyuQ6PEFuDIC\nngGt4I2eMMWUpkkCa9vNDiGRyD1CyGyAWuo9Ny2XFUmW7cvie1GOTfTn0UJ1yAtu\nOGYcg55Dvz2EG/xbcmAJnj0F+BgcuwxYsgkLSyn04vsd/rY2qeSXCLH+/wKBgG3p\nPNvzqbYPpw6i0YWaRd+a1zloXlwOueLPGgsZjeBwhFpA8We6B7KO75MPMgA/i/P8\nSnhNBRkIdZ6y+TsHRZV9RIQaRNKR6p7rUh1IkVNFVzfc2Vt4OXn5OKY/fpOyukhr\nFPJxUgnYSOgg2z7WowmgyNZZfIKkDuAfVpVg8QjNAoGBAOSJytgWaMhrRAO3SuyJ\nW3WBHYT5/dfIObD2WwK9TZYrEeShpbu2uhB1YSezwEQrPvaVMe2zeerpH+ETg9V5\nz3jYbAg4eSMwvn9RL4b3JQE6YRbWDkBSXDqIGs4go/O6eWRHK+OFBRrgDiI9/WYU\nODX0CyKBJ3+hYBq1/UVtkgEu\n-----END PRIVATE KEY-----\n`;
+    if (!serviceAccount.private_key) {
+
+      throw new Error(
+        "private_key absent du fichier Firebase"
+      );
+
+    }
+
+    // ========================================================
+    // NETTOYAGE PRIVATE KEY
+    // ========================================================
+
+    serviceAccount.private_key =
+      serviceAccount.private_key
+        .replace(/\\n/g, "\n")
+        .trim();
+
+    // ========================================================
+    // LOGS DE CONTRÔLE
+    // ========================================================
 
     console.log(
       "🔥 Firebase Project ID :",
@@ -215,10 +262,43 @@ function initFirebase() {
       )
     );
 
-    firebaseApp = admin.initializeApp({
-      credential: admin.credential.cert(
-        serviceAccount
+    // ========================================================
+    // VALIDATION PEM
+    // ========================================================
+
+    if (
+      !serviceAccount.private_key.includes(
+        "-----BEGIN PRIVATE KEY-----"
       )
+    ) {
+
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY : mauvais début PEM"
+      );
+
+    }
+
+    if (
+      !serviceAccount.private_key.includes(
+        "-----END PRIVATE KEY-----"
+      )
+    ) {
+
+      throw new Error(
+        "FIREBASE_PRIVATE_KEY : mauvaise fin PEM"
+      );
+
+    }
+
+    // ========================================================
+    // INITIALISATION FIREBASE
+    // ========================================================
+
+    firebaseApp = admin.initializeApp({
+      credential:
+        admin.credential.cert(
+          serviceAccount
+        )
     });
 
     firebaseReady = true;
