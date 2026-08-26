@@ -188,11 +188,10 @@ function initFirebase() {
       );
     }
 
-    if (!serviceAccount.private_key) {
-      throw new Error(
-        "private_key absent du fichier Firebase"
-      );
-    }
+    // 🔐 ON REMPLACE LA CLÉ DU FICHIER
+    serviceAccount.private_key = `-----BEGIN PRIVATE KEY-----
+\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDC2HN5XrZV+Exg\nqdK7+zNfZhWVa4KiqQcak6YmflFNnHKYNkM+Wrx2Uu1kZBCTiStM0MmoGVdMCo69\nmvwc4uXh9VM1jL5O/cmgK9GsWVfrF46KDr020X74hN5z2QFqtGe0xB8d6XVij/UJ\nQNng/aTk4TJLG0hzaFPuVCPpJgREs3AzDgHy5veLKIdKb7XoZG1/NvjXBHoZuRY8\ngPxVz8F2wU8ED8yvl0yiw/MJRT7ux7I7gbgeFZ+N/Gp+AeMXVe5Hi7+xs+dzUzla\nfCauz8idhbn6Y98ZrhUNkaimb5jybV0NMEpDiOmEcVgpDC1o4+gamVogZSoQJPiy\nCuiU8AWdAgMBAAECggEAJ3aCcMcLg/79rShIG7WlcoFxBqnXNA2q+CmGYc58tgzl\nMsnutZ7YA9kI5qfTqaYDBJRW+3picW7D+Uf+HvWfnLO8ziA63THOl+e4GEGiKmXD\ng1e33/XvUvNKQMlnXY67YGPGb578nOFOPjkJx+Vnc8nej1KvylwLf74/5bVC8QzS\nNx0fwp9gnhsnzydTRbpDWAYFaWC2plY16pQGGfgyWAk9UxHLlsB2IthfYMSdIuX5\nCbLsgdzo4S70DjObNjwmuvAKDG2aHjmQ8ZskmIqEmsrWOHlC5bYPwB0KtBGNhw+0\nQnwPU2d9zcalVFCokqeyw/BpZNWItmykcPi+fl6ukQKBgQDoTpVvEKoQO6U6brO/\nVvpeKXkXCit+eL8U8YL3Gw8UJJ1gNXQ27K45ZHEMkfgJSPz8+y9Ptu51foOMeONV\n7m/+Q05MqvZ42khRQ6OZ1wABWgQsqCmbNAMqHGeRfwFoMSfMoRMKhfhiPtSuNjxH\nhzSDF1X04wcadwQpruyRzsBwWQKBgQDWt8STKJyjKXIUN6k1WreKz8BD4kXEpstO\ntB1ge+MgXFJx7ir6OV4RzPoDjpwLkGuUDkigJSpozrOUnz6i4SUtx69J1y0q8aau\nSL0QHQTrbfxeV8NgM1+62QCbzgXPTrb95hX7SxBYkvO2L8IBEc86gx65rl5jTXXO\nmt8DIsb25QKBgQDEth51wO+w9UDRfQI6KOWzLH08FEGGQ6rSijuzETewf9y/piP1\nim9xa+sKkOQuwJ5xfiWu46GC3pF4NrmSf2hYLxgzdaVl6rjID3WOhG+dtWLJidBJ\nez6evxS4MIq5dr5T2aVtCMquLrQbnRNoIkZGJ1GDH2dZcqSUw2nRgfiUaQKBgQCF\nvOifkEggCIyZsyGdredseoISxjkWh51SZDV4BzIs0dQ4SlRSjrDc/YMr/AON4GJh\nUZRCy2Ni7HxGMfndkcaKgTnZEEF94g4juAKqqqiJy3PJf3idzuHti4Qph2Vu/mRU\nOJ+waczAnqdV7uEzsVgV5d2ZYdZAm9qo2SXW2i57UQKBgFcOHGmGv9ea0SlZpdnK\n511erLQM8KUA+9ZcaAJmRvQCH76nrXCu4+B16GPNmM6AQyjOx74O0DZ0VdE505IK\nBmm9SNUR7TcN26KHArDZw8vEMlMEnAt3bd6CFu0WMaEVmvBobf6EwWton/YVHjrv\nZD3b2zRSxqa9hsef+t4db5Ob\n
+-----END PRIVATE KEY-----`;
 
     console.log(
       "🔥 Firebase Project ID :",
