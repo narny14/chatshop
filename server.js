@@ -149,226 +149,104 @@ function initFirebase() {
 
   try {
 
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+
+    let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
     console.log("=================================");
     console.log("🔥 INITIALISATION FIREBASE");
     console.log("=================================");
 
-    const projectId =
-      String(process.env.FIREBASE_PROJECT_ID || "").trim();
-
-    const clientEmail =
-      String(process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-
-    let privateKey =
-      process.env.FIREBASE_PRIVATE_KEY;
-
     // --------------------------------------------------------
-    // Vérification
+    // Vérification variables
     // --------------------------------------------------------
 
     if (!projectId) {
-      throw new Error(
-        "FIREBASE_PROJECT_ID manquant"
-      );
+      throw new Error("FIREBASE_PROJECT_ID manquant");
     }
 
     if (!clientEmail) {
-      throw new Error(
-        "FIREBASE_CLIENT_EMAIL manquant"
-      );
+      throw new Error("FIREBASE_CLIENT_EMAIL manquant");
     }
 
     if (!privateKey) {
-      throw new Error(
-        "FIREBASE_PRIVATE_KEY manquant"
-      );
+      throw new Error("FIREBASE_PRIVATE_KEY manquant");
     }
 
     // --------------------------------------------------------
-    // Convertir en String
+    // Nettoyage de la clé privée
     // --------------------------------------------------------
 
-    privateKey = String(privateKey);
+    privateKey = String(privateKey).trim();
 
-    // --------------------------------------------------------
-    // Supprimer guillemets éventuels
-    // --------------------------------------------------------
-
+    // Retirer les guillemets extérieurs
     if (
       privateKey.startsWith('"') &&
       privateKey.endsWith('"')
     ) {
-
-      privateKey =
-        privateKey.slice(1, -1);
-
+      privateKey = privateKey.slice(1, -1);
     }
 
-    if (
-      privateKey.startsWith("'") &&
-      privateKey.endsWith("'")
-    ) {
+    // Transformer les caractères \n en vrais retours à la ligne
+    privateKey = privateKey.replace(/\\n/g, "\n");
 
-      privateKey =
-        privateKey.slice(1, -1);
-
-    }
+    // Nettoyage final
+    privateKey = privateKey.trim();
 
     // --------------------------------------------------------
-    // IMPORTANT :
-    // transformer \n en vrais retours à la ligne
+    // Vérification PEM
     // --------------------------------------------------------
 
-    privateKey =
-      privateKey.replace(/\\n/g, "\n");
+    const pemStart = "-----BEGIN PRIVATE KEY-----";
+    const pemEnd = "-----END PRIVATE KEY-----";
+
+    console.log("🔥 Firebase Project ID :", projectId);
+    console.log("🔥 Firebase Client Email :", clientEmail);
+
+    console.log(
+      "🔥 BEGIN PRIVATE KEY :",
+      privateKey.startsWith(pemStart)
+    );
+
+    console.log(
+      "🔥 END PRIVATE KEY :",
+      privateKey.endsWith(pemEnd)
+    );
 
     // --------------------------------------------------------
-    // Supprimer les CR Windows
+    // Validation stricte
     // --------------------------------------------------------
 
-    privateKey =
-      privateKey.replace(/\r/g, "");
-
-    // --------------------------------------------------------
-    // Nettoyage
-    // --------------------------------------------------------
-
-    privateKey =
-      privateKey.trim();
-
-    // --------------------------------------------------------
-    // Vérification BEGIN
-    // --------------------------------------------------------
-
-    if (
-      !privateKey.includes(
-        "-----BEGIN PRIVATE KEY-----"
-      )
-    ) {
-
-      throw new Error(
-        "FIREBASE_PRIVATE_KEY : BEGIN PRIVATE KEY absent"
-      );
-
-    }
-
-    // --------------------------------------------------------
-    // Vérification END
-    // --------------------------------------------------------
-
-    if (
-      !privateKey.includes(
-        "-----END PRIVATE KEY-----"
-      )
-    ) {
-
-      throw new Error(
-        "FIREBASE_PRIVATE_KEY : END PRIVATE KEY absent"
-      );
-
-    }
-
-    // --------------------------------------------------------
-    // Vérifier position BEGIN
-    // --------------------------------------------------------
-
-    if (
-      !privateKey.startsWith(
-        "-----BEGIN PRIVATE KEY-----"
-      )
-    ) {
-
+    if (!privateKey.startsWith(pemStart)) {
       throw new Error(
         "FIREBASE_PRIVATE_KEY : mauvais début PEM"
       );
-
     }
 
-    // --------------------------------------------------------
-    // Vérifier position END
-    // --------------------------------------------------------
-
-    if (
-      !privateKey.endsWith(
-        "-----END PRIVATE KEY-----"
-      )
-    ) {
-
+    if (!privateKey.endsWith(pemEnd)) {
       throw new Error(
         "FIREBASE_PRIVATE_KEY : mauvais fin PEM"
       );
-
     }
 
     // --------------------------------------------------------
-    // Informations DEBUG SÉCURISÉES
+    // Initialisation Firebase
     // --------------------------------------------------------
 
-    console.log(
-      "🔥 Firebase Project ID :",
-      projectId
-    );
+    firebaseApp = admin.initializeApp({
 
-    console.log(
-      "🔥 Firebase Client Email :",
-      clientEmail
-    );
+      credential: admin.credential.cert({
 
-    console.log(
-      "🔥 BEGIN détecté :",
-      privateKey.includes(
-        "-----BEGIN PRIVATE KEY-----"
-      )
-    );
+        projectId: projectId,
 
-    console.log(
-      "🔥 END détecté :",
-      privateKey.includes(
-        "-----END PRIVATE KEY-----"
-      )
-    );
+        clientEmail: clientEmail,
 
-    console.log(
-      "🔥 Longueur clé :",
-      privateKey.length
-    );
+        privateKey: privateKey
 
-    console.log(
-      "🔥 Nombre de lignes :",
-      privateKey.split("\n").length
-    );
+      })
 
-    // --------------------------------------------------------
-    // INITIALISER FIREBASE
-    // --------------------------------------------------------
-
-    if (admin.apps.length > 0) {
-
-      firebaseApp =
-        admin.app();
-
-    } else {
-
-      firebaseApp =
-        admin.initializeApp({
-
-          credential:
-            admin.credential.cert({
-
-              projectId:
-                projectId,
-
-              clientEmail:
-                clientEmail,
-
-              privateKey:
-                privateKey
-
-            })
-
-        });
-
-    }
+    });
 
     firebaseReady = true;
 
@@ -387,20 +265,15 @@ function initFirebase() {
     console.error("=================================");
     console.error("❌ ERREUR FIREBASE");
     console.error("=================================");
-    console.error(
-      error.message
-    );
+    console.error(error.message);
     console.error("=================================");
-    console.error(
-      "⚠️ FCM DÉSACTIVÉ"
-    );
+    console.error("⚠️ FCM DÉSACTIVÉ");
     console.error("=================================");
 
     return null;
   }
 }
 
-// Lancer Firebase
 initFirebase();
 app.get("/backend/test-firebase", async (req, res) => {
 
