@@ -1111,18 +1111,30 @@ app.post('/backend/send', async (req, res) => {
     const senderName = senderEmail.split('@')[0] || 'Utilisateur';
 
     setImmediate(async () => {
-      await sendFCMNotification(
-        receiver_id,
-        `📩 Nouveau message de ${senderName}`,
-        message.length > 100 ? message.substring(0, 100) + '...' : message,
-        {
-          sender_id: String(sender_id),
-          receiver_id: String(receiver_id),
-          message_id: String(messageId),
-          message
-        }
-      );
+
+  const notificationResult =
+    await sendChatFCMNotification({
+
+      receiverId: receiver_id,
+
+      boutiqueId: boutiqueId,
+
+      senderId: sender_id,
+
+      senderName: senderName,
+
+      message: message,
+
+      messageId: messageId
+
     });
+
+  console.log(
+    "📨 Notification chat terminée :",
+    notificationResult
+  );
+
+});
 
     res.json({ success: true, message_id: messageId });
   } catch (error) {
@@ -2118,6 +2130,257 @@ app.post('/backend/send_notification', async (req, res) => {
   }
 });
 
+// ============================================================
+// FCM CHAT UNIQUEMENT
+// ============================================================
+
+async function sendChatFCMNotification({
+  receiverId,
+  boutiqueId,
+  senderId,
+  senderName,
+  message,
+  messageId
+}) {
+
+  console.log("=================================");
+  console.log("💬 NOTIFICATION CHAT");
+  console.log("=================================");
+  console.log("👤 Destinataire :", receiverId);
+  console.log("🏪 Boutique     :", boutiqueId);
+  console.log("👤 Expéditeur   :", senderId);
+  console.log("🆔 Message ID    :", messageId);
+
+  try {
+
+    // ----------------------------------------------------------
+    // 1. Vérifier Firebase
+    // ----------------------------------------------------------
+
+    if (!firebaseReady || !firebaseApp) {
+
+      console.log(
+        "⚠️ Firebase non disponible - notification chat ignorée"
+      );
+
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: 0,
+        total: 0,
+        error: "Firebase non disponible"
+      };
+    }
+
+    // ----------------------------------------------------------
+    // 2. Récupérer les tokens du destinataire
+    // ----------------------------------------------------------
+
+    const [rows] = await pool.query(
+      `
+      SELECT fcm_token
+      FROM user_fcm_tokens
+      WHERE id = ?
+        AND id_boutique = ?
+        AND fcm_token IS NOT NULL
+        AND TRIM(fcm_token) <> ''
+      `,
+      [
+        receiverId,
+        boutiqueId
+      ]
+    );
+
+    console.log(
+      `📱 Enregistrements FCM trouvés : ${rows.length}`
+    );
+
+    if (rows.length === 0) {
+
+      console.log(
+        `⚠️ Aucun token FCM pour l'utilisateur ${receiverId}`
+      );
+
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: 0,
+        total: 0,
+        error: "Aucun token FCM"
+      };
+    }
+
+    // ----------------------------------------------------------
+    // 3. Nettoyer et supprimer les doublons
+    // ----------------------------------------------------------
+
+    const tokens = [
+      ...new Set(
+        rows
+          .map(row => String(row.fcm_token).trim())
+          .filter(Boolean)
+      )
+    ];
+
+    console.log(
+      `📱 Tokens uniques : ${tokens.length}`
+    );
+
+    if (tokens.length === 0) {
+
+      return {
+        success: false,
+        successCount: 0,
+        failureCount: 0,
+        total: 0,
+        error: "Aucun token FCM valide"
+      };
+    }
+
+    // ----------------------------------------------------------
+    // 4. Préparer la notification
+    // ----------------------------------------------------------
+
+    const title = `💬 ${senderName}`;
+
+    const body =
+      String(message).length > 100
+        ? String(message).substring(0, 100) + "..."
+        : String(message);
+
+    const data = {
+      type: "chat_message",
+      sender_id: String(senderId),
+      receiver_id: String(receiverId),
+      message_id: String(messageId),
+      message: String(message),
+      id_boutique: String(boutiqueId)
+    };
+
+    console.log("=================================");
+    console.log("📨 ENVOI FCM CHAT");
+    console.log("=================================");
+    console.log("Title :", title);
+    console.log("Body  :", body);
+    console.log("Data  :", JSON.stringify(data));
+    console.log("Tokens :", tokens.length);
+
+    // ----------------------------------------------------------
+    // 5. Envoyer à Firebase
+    // ----------------------------------------------------------
+
+    const firebaseMessage = {
+
+      tokens: tokens,
+
+      notification: {
+        title: title,
+        body: body
+      },
+
+      data: data,
+
+      android: {
+        priority: "high",
+
+        notification: {
+          channelId: "chat_notifications",
+          sound: "default"
+        }
+      },
+
+      apns: {
+        payload: {
+          aps: {
+            sound: "default"
+          }
+        }
+      }
+    };
+
+    const response =
+      await admin
+        .messaging()
+        .sendEachForMulticast(firebaseMessage);
+
+    console.log("=================================");
+    console.log("📨 RÉSULTAT FCM CHAT");
+    console.log("=================================");
+
+    console.log(
+      "✅ Succès :",
+      response.successCount
+    );
+
+    console.log(
+      "❌ Échecs :",
+      response.failureCount
+    );
+
+    console.log(
+      "📱 Total :",
+      tokens.length
+    );
+
+    // ----------------------------------------------------------
+    // 6. Afficher les erreurs
+    // ----------------------------------------------------------
+
+    response.responses.forEach(
+      (result, index) => {
+
+        if (!result.success) {
+
+          console.error(
+            `❌ Token ${index} :`,
+            result.error?.code,
+            result.error?.message
+          );
+
+        }
+
+      }
+    );
+
+    console.log("=================================");
+
+    return {
+
+      success: response.successCount > 0,
+
+      successCount:
+        response.successCount,
+
+      failureCount:
+        response.failureCount,
+
+      total:
+        tokens.length
+
+    };
+
+  } catch (error) {
+
+    console.error(
+      "❌ ERREUR FCM CHAT :",
+      error
+    );
+
+    return {
+
+      success: false,
+
+      successCount: 0,
+
+      failureCount: 1,
+
+      total: 1,
+
+      error: error.message
+
+    };
+  }
+}
 // ---------- 5.10 Détails produit (client) ----------
 app.get('/backend/products/:id', async (req, res) => {
   const productId = parseInt(req.params.id);
