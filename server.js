@@ -160,9 +160,10 @@ async function initFirebase() {
     console.log("=================================");
     console.log("🔥 INITIALISATION FIREBASE");
     console.log("=================================");
-
+//https://bytesshopsite.byteatomeneons.com/serviceAccountKey.json
+//https://bytesshop.byteatomeneons.com/serviceAccountKey.json
     const serviceAccountUrl =
-      "https://bytesshop.byteatomeneons.com/serviceAccountKey.json";
+      "https://bytesshopsite.byteatomeneons.com/serviceAccountKey.json";
 
     console.log(
       "🌐 Fichier Firebase :",
